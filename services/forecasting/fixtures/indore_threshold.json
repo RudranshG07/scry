@@ -1,0 +1,28 @@
+{
+  "streamId": "stream-indore-gate-a",
+  "asOf": "2026-07-20T13:50:00.000Z",
+  "horizonMinutes": 5,
+  "currentCount": 126,
+  "threshold": 180,
+  "historicalObservations": [
+    {"timestamp":"2026-07-13T13:44:00.000Z","eventCount":10,"intervalSeconds":60,"streamQuality":0.98},
+    {"timestamp":"2026-07-13T13:45:00.000Z","eventCount":11,"intervalSeconds":60,"streamQuality":0.99},
+    {"timestamp":"2026-07-13T13:46:00.000Z","eventCount":12,"intervalSeconds":60,"streamQuality":0.98},
+    {"timestamp":"2026-07-13T13:47:00.000Z","eventCount":11,"intervalSeconds":60,"streamQuality":0.97},
+    {"timestamp":"2026-07-13T13:48:00.000Z","eventCount":13,"intervalSeconds":60,"streamQuality":0.99},
+    {"timestamp":"2026-07-13T13:49:00.000Z","eventCount":12,"intervalSeconds":60,"streamQuality":0.98}
+  ],
+  "recentObservations": [
+    {"timestamp":"2026-07-20T13:46:00.000Z","eventCount":9,"intervalSeconds":60,"streamQuality":0.97},
+    {"timestamp":"2026-07-20T13:47:00.000Z","eventCount":10,"intervalSeconds":60,"streamQuality":0.98},
+    {"timestamp":"2026-07-20T13:48:00.000Z","eventCount":11,"intervalSeconds":60,"streamQuality":0.99},
+    {"timestamp":"2026-07-20T13:49:00.000Z","eventCount":12,"intervalSeconds":60,"streamQuality":0.99}
+  ],
+  "config": {
+    "recentWeight": 0.55,
+    "recentDecay": 0.65,
+    "trendWeight": 0.2,
+    "overdispersion": 1.25,
+    "minimumStreamQuality": 0.5
+  }
+}

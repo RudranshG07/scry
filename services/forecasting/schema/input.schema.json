@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/forecast-input.json",
+  "title": "Scry forecast input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["streamId", "asOf", "horizonMinutes", "currentCount", "threshold"],
+  "properties": {
+    "streamId": { "type": "string", "minLength": 1 },
+    "asOf": { "type": "string", "format": "date-time" },
+    "horizonMinutes": { "type": "integer", "minimum": 1 },
+    "currentCount": { "type": "integer", "minimum": 0 },
+    "threshold": { "type": "integer", "minimum": 0 },
+    "recentObservations": { "type": "array", "default": [], "items": { "$ref": "#/$defs/observation" } },
+    "historicalObservations": { "type": "array", "default": [], "items": { "$ref": "#/$defs/observation" } },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recentWeight": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.55 },
+        "recentDecay": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.65 },
+        "trendWeight": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.2 },
+        "overdispersion": { "type": "number", "exclusiveMinimum": 0, "default": 1.25 },
+        "minimumStreamQuality": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 }
+      }
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp", "eventCount", "intervalSeconds", "streamQuality"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "eventCount": { "type": "integer", "minimum": 0 },
+        "intervalSeconds": { "type": "integer", "minimum": 1 },
+        "streamQuality": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

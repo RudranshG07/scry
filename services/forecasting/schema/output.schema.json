@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/forecast-output.json",
+  "title": "Scry forecast output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stream_id", "as_of", "horizon_minutes", "expected_value", "probability_above_threshold", "lower_80", "upper_80", "forecast_rate_per_minute", "model_version", "feature_version", "features"],
+  "properties": {
+    "stream_id": { "type": "string", "minLength": 1 },
+    "as_of": { "type": "string", "format": "date-time" },
+    "horizon_minutes": { "type": "integer", "minimum": 1 },
+    "expected_value": { "type": "number", "minimum": 0 },
+    "probability_above_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+    "lower_80": { "type": "number", "minimum": 0 },
+    "upper_80": { "type": "number", "minimum": 0 },
+    "forecast_rate_per_minute": { "type": "number", "minimum": 0 },
+    "model_version": { "type": "string", "minLength": 1 },
+    "feature_version": { "type": "string", "minLength": 1 },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seasonal_rate_per_minute", "recent_rate_per_minute", "recent_quality", "rate_trend_per_minute", "matching_history_count", "recent_observation_count", "weekday", "minute_of_day"],
+      "properties": {
+        "seasonal_rate_per_minute": { "type": "number", "minimum": 0 },
+        "recent_rate_per_minute": { "type": "number", "minimum": 0 },
+        "recent_quality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rate_trend_per_minute": { "type": "number" },
+        "matching_history_count": { "type": "integer", "minimum": 0 },
+        "recent_observation_count": { "type": "integer", "minimum": 0 },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "minute_of_day": { "type": "integer", "minimum": 0, "maximum": 1439 }
+      }
+    }
+  }
+}
