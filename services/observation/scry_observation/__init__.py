@@ -23,7 +23,9 @@ from .storage import (
     EvidenceStoreError,
     FileEvidenceStore,
     StoredEvidence,
+    create_stored_evidence,
 )
+from .s3_storage import S3Client, S3EvidenceStore
 
 __all__ = [
     "EvidenceArtifact",
@@ -45,9 +47,12 @@ __all__ = [
     "ResolutionPolicy",
     "ResolutionStatus",
     "StoredEvidence",
+    "S3Client",
+    "S3EvidenceStore",
     "build_commitment",
     "canonical_json",
     "create_artifact",
+    "create_stored_evidence",
     "evidence_root",
     "evaluate_stream_health",
     "resolve_observation",

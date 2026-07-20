@@ -107,6 +107,40 @@ def _segment(value: str, label: str) -> str:
     return value
 
 
+def create_stored_evidence(
+    market_id: str,
+    name: str,
+    media_type: str,
+    content: bytes,
+    created_at: datetime,
+    retention: timedelta,
+) -> StoredEvidence:
+    _segment(market_id, "Market identity")
+    _segment(name, "Evidence name")
+    if not media_type.strip():
+        raise ValueError("Evidence media type is required.")
+    if created_at.tzinfo is None:
+        raise ValueError("Evidence creation time must include a timezone.")
+    if retention <= timedelta(0):
+        raise ValueError("Evidence retention must be positive.")
+    digest = hashlib.sha256(content).hexdigest()
+    identity = json.dumps(
+        [market_id, name, digest, _timestamp(created_at)],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return StoredEvidence(
+        record_id=hashlib.sha256(identity).hexdigest(),
+        market_id=market_id,
+        name=name,
+        media_type=media_type,
+        digest=digest,
+        size_bytes=len(content),
+        created_at=created_at,
+        expires_at=created_at + retention,
+    )
+
+
 class FileEvidenceStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
@@ -143,35 +177,11 @@ class FileEvidenceStore:
         created_at: datetime,
         retention: timedelta,
     ) -> StoredEvidence:
-        _segment(market_id, "Market identity")
-        _segment(name, "Evidence name")
-        if not media_type.strip():
-            raise ValueError("Evidence media type is required.")
-        if created_at.tzinfo is None:
-            raise ValueError("Evidence creation time must include a timezone.")
-        if retention <= timedelta(0):
-            raise ValueError("Evidence retention must be positive.")
-
-        digest = hashlib.sha256(content).hexdigest()
-        identity = json.dumps(
-            [market_id, name, digest, _timestamp(created_at)],
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        record = StoredEvidence(
-            record_id=hashlib.sha256(identity).hexdigest(),
-            market_id=market_id,
-            name=name,
-            media_type=media_type,
-            digest=digest,
-            size_bytes=len(content),
-            created_at=created_at,
-            expires_at=created_at + retention,
-        )
-        object_path = self._object_path(digest)
+        record = create_stored_evidence(market_id, name, media_type, content, created_at, retention)
+        object_path = self._object_path(record.digest)
         if object_path.exists():
             existing = object_path.read_bytes()
-            if hashlib.sha256(existing).hexdigest() != digest:
+            if hashlib.sha256(existing).hexdigest() != record.digest:
                 raise EvidenceIntegrityError("Stored evidence object failed its integrity check.")
         else:
             self._atomic_write(object_path, content)
