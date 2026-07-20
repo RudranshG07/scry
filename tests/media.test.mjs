@@ -26,3 +26,20 @@ test("media base URLs resolve the conventional HLS path", () => {
     { kind: "hls", url: "https://media.scry.test/hls/stream-a/index.m3u8" },
   );
 });
+
+test("LiveKit playback is preferred when its server and token API are configured", () => {
+  assert.deepEqual(
+    resolveStreamPlayback(
+      "stream-a",
+      "https://media.scry.test/live.mp4",
+      "https://media.scry.test/hls",
+      "wss://live.scry.test",
+      "https://api.scry.test/",
+    ),
+    {
+      kind: "livekit",
+      url: "wss://live.scry.test",
+      tokenEndpoint: "https://api.scry.test/v1/streams/stream-a/playback-token",
+    },
+  );
+});

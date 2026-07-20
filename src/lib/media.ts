@@ -1,5 +1,6 @@
 export type StreamPlayback =
   | { kind: "fallback" }
+  | { kind: "livekit"; url: string; tokenEndpoint: string }
   | { kind: "hls" | "video"; url: string };
 
 function playbackKind(url: string) {
@@ -10,8 +11,18 @@ export function resolveStreamPlayback(
   streamId: string,
   template = process.env.NEXT_PUBLIC_SCRY_STREAM_URL_TEMPLATE?.trim(),
   hlsBaseUrl = process.env.NEXT_PUBLIC_SCRY_HLS_BASE_URL?.trim(),
+  livekitUrl = process.env.NEXT_PUBLIC_SCRY_LIVEKIT_URL?.trim(),
+  apiUrl = process.env.NEXT_PUBLIC_SCRY_API_URL?.trim(),
 ): StreamPlayback {
   const encodedId = encodeURIComponent(streamId);
+
+  if (livekitUrl && apiUrl) {
+    return {
+      kind: "livekit",
+      url: livekitUrl,
+      tokenEndpoint: `${apiUrl.replace(/\/+$/, "")}/v1/streams/${encodedId}/playback-token`,
+    };
+  }
 
   if (template) {
     const url = template.includes("{streamId}")

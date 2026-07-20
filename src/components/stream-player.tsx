@@ -26,6 +26,59 @@ export function StreamPlayer({
     const video = videoRef.current;
     if (!video) return;
 
+    if (playback.kind === "livekit") {
+      let disposed = false;
+      let room: { disconnect: () => void } | null = null;
+      const controller = new AbortController();
+
+      void Promise.all([
+        import("livekit-client"),
+        fetch(playback.tokenEndpoint, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        }),
+      ])
+        .then(async ([{ Room, RoomEvent }, response]) => {
+          if (!response.ok) throw new Error("Playback authorization failed.");
+          const payload = await response.json() as { token?: unknown };
+          if (typeof payload.token !== "string" || !payload.token) throw new Error("Playback authorization is invalid.");
+          if (disposed) return;
+
+          const nextRoom = new Room({ adaptiveStream: true, dynacast: true });
+          room = nextRoom;
+          nextRoom.on(RoomEvent.TrackSubscribed, (track) => {
+            if (track.kind === "video" && videoRef.current) {
+              track.attach(videoRef.current);
+              setState("ready");
+            }
+          });
+          nextRoom.on(RoomEvent.Disconnected, () => {
+            if (!disposed) setState("error");
+          });
+          await nextRoom.connect(playback.url, payload.token, { autoSubscribe: true });
+          for (const participant of nextRoom.remoteParticipants.values()) {
+            for (const publication of participant.videoTrackPublications.values()) {
+              if (publication.track && videoRef.current) {
+                publication.track.attach(videoRef.current);
+                setState("ready");
+                return;
+              }
+            }
+          }
+        })
+        .catch((error: unknown) => {
+          if (!disposed && !(error instanceof DOMException && error.name === "AbortError")) setState("error");
+        });
+
+      return () => {
+        disposed = true;
+        controller.abort();
+        room?.disconnect();
+      };
+    }
+
     if (playback.kind === "video" || video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = playback.url;
       return () => {
