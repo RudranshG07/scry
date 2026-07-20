@@ -1,0 +1,36 @@
+{
+  "name": "scry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "node --test --experimental-strip-types tests/*.test.mjs",
+    "test:observation": "env PYTHONPATH=services/observation python3 -m unittest discover -s services/observation/tests -v",
+    "test:forecasting": "env PYTHONPATH=services/forecasting python3 -m unittest discover -s services/forecasting/tests -v",
+    "test:operations": "env PYTHONPATH=services/operations python3 -m unittest discover -s services/operations/tests -v"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.16",
+    "lucide-react": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}

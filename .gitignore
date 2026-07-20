@@ -1,0 +1,13 @@
+.next/
+node_modules/
+__pycache__/
+*.pyc
+tsconfig.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+.pytest_cache/
+coverage/
+*.log
