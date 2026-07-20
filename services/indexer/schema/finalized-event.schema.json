@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/finalized-chain-event.json",
+  "title": "Scry finalized chain event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "eventId", "chainId", "blockNumber", "transactionIndex", "logIndex", "transactionHash", "blockHash", "recordedAt", "marketId"],
+  "properties": {
+    "type": { "enum": ["market.created", "position.placed", "market.locked", "observation.proposed", "market.challenged", "market.resolved", "market.invalidated", "payout.claimed", "refund.claimed"] },
+    "eventId": { "type": "string", "minLength": 1 },
+    "chainId": { "type": "integer", "minimum": 1 },
+    "blockNumber": { "$ref": "#/$defs/unsigned" },
+    "transactionIndex": { "type": "integer", "minimum": 0 },
+    "logIndex": { "type": "integer", "minimum": 0 },
+    "transactionHash": { "$ref": "#/$defs/hash" },
+    "blockHash": { "$ref": "#/$defs/hash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "marketId": { "type": "string", "minLength": 1 },
+    "contractAddress": { "$ref": "#/$defs/address" },
+    "streamId": { "type": "string", "minLength": 1 },
+    "ruleHash": { "$ref": "#/$defs/hash" },
+    "outcomes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "initialStatus": { "enum": ["Scheduled", "Open"] },
+    "account": { "$ref": "#/$defs/address" },
+    "outcomeId": { "type": "string", "minLength": 1 },
+    "amount": { "$ref": "#/$defs/unsigned" },
+    "observedValue": { "$ref": "#/$defs/unsigned" },
+    "winningOutcomeId": { "type": "string", "minLength": 1 },
+    "evidenceRoot": { "$ref": "#/$defs/hash" }
+  },
+  "oneOf": [
+    { "properties": { "type": { "const": "market.created" } }, "required": ["contractAddress", "streamId", "ruleHash", "outcomes", "initialStatus"] },
+    { "properties": { "type": { "const": "position.placed" } }, "required": ["account", "outcomeId", "amount"] },
+    { "properties": { "type": { "const": "market.locked" } } },
+    { "properties": { "type": { "const": "observation.proposed" } }, "required": ["observedValue", "winningOutcomeId", "evidenceRoot"] },
+    { "properties": { "type": { "const": "market.challenged" } } },
+    { "properties": { "type": { "const": "market.resolved" } } },
+    { "properties": { "type": { "const": "market.invalidated" } } },
+    { "properties": { "type": { "const": "payout.claimed" } }, "required": ["account", "outcomeId", "amount"] },
+    { "properties": { "type": { "const": "refund.claimed" } }, "required": ["account", "outcomeId", "amount"] }
+  ],
+  "$defs": {
+    "unsigned": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "hash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" }
+  }
+}
