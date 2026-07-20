@@ -1,0 +1,210 @@
+@import "tailwindcss";
+
+:root {
+  --background: #080911;
+  --foreground: #f4f3ff;
+  --surface: #11131e;
+  --surface-raised: #171a28;
+  --surface-soft: #1d2030;
+  --primary: #745cff;
+  --primary-hover: #856fff;
+  --primary-foreground: #ffffff;
+  --accent: #9df7cb;
+  --accent-foreground: #062519;
+  --muted: #272a3b;
+  --muted-foreground: #aeb4cc;
+  --border: #292d40;
+  --ring: #9b8cff;
+  --danger: #ff6b7c;
+  --warning: #f7c66b;
+  --radius-card: 0.875rem;
+  --radius-control: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-soft: var(--surface-soft);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  background: var(--background);
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 52% -18%, rgb(116 92 255 / 18%), transparent 33rem),
+    var(--background);
+  color: var(--foreground);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+}
+
+.button-primary,
+.button-secondary,
+.button-ghost {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-control);
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  font-weight: 650;
+  outline: none;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+.button-primary:focus-visible,
+.button-secondary:focus-visible,
+.button-ghost:focus-visible {
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+}
+
+.button-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.button-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--foreground);
+}
+
+.button-secondary:hover:not(:disabled),
+.button-ghost:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.button-ghost {
+  color: var(--muted-foreground);
+}
+
+.button-primary:disabled,
+.button-secondary:disabled,
+.button-ghost:disabled {
+  opacity: 0.48;
+}
+
+.glass-panel {
+  background: rgb(17 19 30 / 88%);
+  backdrop-filter: blur(18px);
+}
+
+.signal-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.stream-noise {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgb(255 255 255 / 2%) 3px,
+    rgb(255 255 255 / 2%) 4px
+  );
+}
+
+.vehicle-a {
+  animation: vehicle-a 7s linear infinite;
+}
+
+.vehicle-b {
+  animation: vehicle-b 9s linear infinite;
+}
+
+.vehicle-c {
+  animation: vehicle-c 6s linear infinite;
+}
+
+.signal-pulse {
+  animation: signal-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes vehicle-a {
+  from { transform: translateX(-18%); }
+  to { transform: translateX(116%); }
+}
+
+@keyframes vehicle-b {
+  from { transform: translateX(108%); }
+  to { transform: translateX(-18%); }
+}
+
+@keyframes vehicle-c {
+  from { transform: translateY(-20%); }
+  to { transform: translateY(118%); }
+}
+
+@keyframes signal-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vehicle-a,
+  .vehicle-b,
+  .vehicle-c,
+  .signal-pulse,
+  .animate-pulse {
+    animation: none;
+  }
+}
+
+@media (width < 1024px) {
+  body:has(nav[aria-label="Mobile navigation"]) {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
