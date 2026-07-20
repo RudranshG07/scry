@@ -1,0 +1,7 @@
+[project]
+name = "scry-vision"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+scry-vision = "scry_vision.cli:main"

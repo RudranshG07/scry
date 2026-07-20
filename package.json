@@ -12,7 +12,8 @@
     "test:observation": "env PYTHONPATH=services/observation python3 -m unittest discover -s services/observation/tests -v",
     "test:forecasting": "env PYTHONPATH=services/forecasting python3 -m unittest discover -s services/forecasting/tests -v",
     "test:operations": "env PYTHONPATH=services/operations python3 -m unittest discover -s services/operations/tests -v",
-    "test:qualification": "env PYTHONPATH=services/qualification python3 -m unittest discover -s services/qualification/tests -v"
+    "test:qualification": "env PYTHONPATH=services/qualification python3 -m unittest discover -s services/qualification/tests -v",
+    "test:vision": "env PYTHONPATH=services/vision python3 -m unittest discover -s services/vision/tests -v"
   },
   "dependencies": {
     "hls.js": "1.6.16",

@@ -1,0 +1,21 @@
+{
+  "line": {
+    "start": {"x": 0, "y": -10},
+    "end": {"x": 0, "y": 10},
+    "acceptedDirection": "positive_to_negative"
+  },
+  "config": {
+    "minimumConfidence": 0.8,
+    "acceptedCategories": ["vehicle"],
+    "deadbandDistance": 1,
+    "staleTrackSeconds": 5
+  },
+  "samples": [
+    {"trackId":"vehicle-1","timestamp":"2026-07-21T11:00:00.000Z","centroid":{"x":-5,"y":0},"confidence":0.97,"category":"vehicle"},
+    {"trackId":"vehicle-1","timestamp":"2026-07-21T11:00:00.200Z","centroid":{"x":-0.4,"y":0},"confidence":0.97,"category":"vehicle"},
+    {"trackId":"vehicle-1","timestamp":"2026-07-21T11:00:00.400Z","centroid":{"x":5,"y":0},"confidence":0.96,"category":"vehicle"},
+    {"trackId":"vehicle-1","timestamp":"2026-07-21T11:00:00.600Z","centroid":{"x":-5,"y":0},"confidence":0.96,"category":"vehicle"},
+    {"trackId":"person-1","timestamp":"2026-07-21T11:00:01.000Z","centroid":{"x":-5,"y":0},"confidence":0.99,"category":"person"},
+    {"trackId":"person-1","timestamp":"2026-07-21T11:00:01.200Z","centroid":{"x":5,"y":0},"confidence":0.99,"category":"person"}
+  ]
+}
