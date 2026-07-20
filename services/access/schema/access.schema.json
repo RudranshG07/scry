@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/access.json",
+  "title": "Scry access policy boundary",
+  "$defs": {
+    "jurisdiction": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestedMode", "ageThresholdMet", "jurisdictionCode", "jurisdictionSource", "identityVerified", "sanctionsCleared", "coolOffUntil", "evaluatedAt"],
+      "properties": {
+        "requestedMode": { "enum": ["forecast", "monetary"] },
+        "ageThresholdMet": { "type": "boolean" },
+        "jurisdictionCode": { "oneOf": [{ "$ref": "#/$defs/jurisdiction" }, { "type": "null" }] },
+        "jurisdictionSource": { "enum": ["verified", "self_declared", "unknown"] },
+        "identityVerified": { "type": "boolean" },
+        "sanctionsCleared": { "type": "boolean" },
+        "coolOffUntil": { "type": ["string", "null"], "format": "date-time" },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["monetaryEnabled", "monetaryJurisdictions", "blockedForecastJurisdictions", "requireIdentityVerification", "requireSanctionsScreening"],
+      "properties": {
+        "monetaryEnabled": { "type": "boolean" },
+        "monetaryJurisdictions": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/jurisdiction" } },
+        "blockedForecastJurisdictions": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/jurisdiction" } },
+        "requireIdentityVerification": { "type": "boolean" },
+        "requireSanctionsScreening": { "type": "boolean" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "forecastAllowed", "monetaryAllowed", "reasons", "evaluatedAt"],
+      "properties": {
+        "mode": { "enum": ["denied", "forecast_only", "monetary"] },
+        "forecastAllowed": { "type": "boolean" },
+        "monetaryAllowed": { "type": "boolean" },
+        "reasons": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["eligible", "age_unverified", "forecast_jurisdiction_blocked", "jurisdiction_unverified", "monetary_jurisdiction_blocked", "identity_verification_required", "sanctions_screening_required", "cool_off_active", "monetary_disabled"] } },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "policy", "decision"],
+  "properties": {
+    "request": { "$ref": "#/$defs/request" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "decision": { "$ref": "#/$defs/decision" }
+  }
+}
