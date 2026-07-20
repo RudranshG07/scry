@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/stored-evidence.json",
+  "title": "Scry stored evidence metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recordId", "marketId", "name", "mediaType", "digest", "sizeBytes", "createdAt", "expiresAt"],
+  "properties": {
+    "recordId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "marketId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "mediaType": { "type": "string", "minLength": 1 },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sizeBytes": { "type": "integer", "minimum": 0 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

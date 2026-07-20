@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/observation-output.json",
+  "title": "Scry observation output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "observerHealth", "commitment"],
+  "properties": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "observed_value", "winning_outcome_id", "agreeing_observer_ids", "reasons"],
+      "properties": {
+        "status": { "enum": ["proposed", "invalid"] },
+        "observed_value": { "type": ["integer", "null"], "minimum": 0 },
+        "winning_outcome_id": { "type": ["string", "null"] },
+        "agreeing_observer_ids": { "type": "array", "items": { "type": "string" } },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/reason" } }
+      }
+    },
+    "observerHealth": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/health" }
+    },
+    "commitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceRoot", "payloadDigest", "payload"],
+      "properties": {
+        "evidenceRoot": { "$ref": "#/$defs/hash" },
+        "payloadDigest": { "$ref": "#/$defs/hash" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "marketId", "streamId", "ruleHash", "observationStartsAt", "observationEndsAt", "status", "observedValue", "winningOutcomeId", "agreeingObserverIds", "evidenceRoot"],
+          "properties": {
+            "schemaVersion": { "type": "string" },
+            "marketId": { "type": "string" },
+            "streamId": { "type": "string" },
+            "ruleHash": { "$ref": "#/$defs/ruleHash" },
+            "observationStartsAt": { "type": "string", "format": "date-time" },
+            "observationEndsAt": { "type": "string", "format": "date-time" },
+            "status": { "enum": ["proposed", "invalid"] },
+            "observedValue": { "type": ["integer", "null"], "minimum": 0 },
+            "winningOutcomeId": { "type": ["string", "null"] },
+            "agreeingObserverIds": { "type": "array", "items": { "type": "string" } },
+            "evidenceRoot": { "$ref": "#/$defs/hash" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^0x[0-9a-f]{64}$" },
+    "ruleHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "reason": {
+      "enum": ["insufficient_uptime", "excessive_timestamp_drift", "low_visibility", "frozen_stream", "timestamp_inconsistent", "observer_divergence", "insufficient_observers", "evidence_unavailable", "manipulation_suspected", "outcome_unresolved", "observer_set_invalid"]
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uptime", "maximum_timestamp_drift_ms", "average_visibility", "longest_frozen_seconds", "sample_count", "expected_sample_count", "reasons"],
+      "properties": {
+        "uptime": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_timestamp_drift_ms": { "type": "number", "minimum": 0 },
+        "average_visibility": { "type": "number", "minimum": 0, "maximum": 1 },
+        "longest_frozen_seconds": { "type": "number", "minimum": 0 },
+        "sample_count": { "type": "integer", "minimum": 0 },
+        "expected_sample_count": { "type": "integer", "minimum": 1 },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/reason" } }
+      }
+    }
+  }
+}

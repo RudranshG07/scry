@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/observation-input.json",
+  "title": "Scry observation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["marketId", "streamId", "ruleHash", "window", "generatedAt", "outcomes", "observers"],
+  "properties": {
+    "schemaVersion": { "type": "string", "minLength": 1, "default": "scry-observation/1" },
+    "marketId": { "type": "string", "minLength": 1 },
+    "streamId": { "type": "string", "minLength": 1 },
+    "ruleHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startsAt", "endsAt"],
+      "properties": {
+        "startsAt": { "type": "string", "format": "date-time" },
+        "endsAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "healthPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumUptime": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.99 },
+        "maximumTimestampDriftMs": { "type": "number", "minimum": 0, "default": 500 },
+        "minimumVisibility": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.9 },
+        "maximumFrozenSeconds": { "type": "number", "minimum": 0, "default": 2 },
+        "expectedSampleIntervalMs": { "type": "integer", "minimum": 1, "default": 1000 }
+      }
+    },
+    "resolutionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumObservers": { "type": "integer", "minimum": 2, "default": 2 },
+        "maximumValueDivergence": { "type": "integer", "minimum": 0, "default": 2 }
+      }
+    },
+    "evidenceAvailable": { "type": "boolean", "default": true },
+    "manipulationSuspected": { "type": "boolean", "default": false },
+    "outcomes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["outcomeId"],
+        "properties": {
+          "outcomeId": { "type": "string", "minLength": 1 },
+          "minimum": { "type": "integer", "minimum": 0 },
+          "maximum": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "observers": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/observer" }
+    },
+    "artifacts": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceTimestamp", "receivedTimestamp", "visibility", "frameFingerprint", "count"],
+      "properties": {
+        "sourceTimestamp": { "type": "string", "format": "date-time" },
+        "receivedTimestamp": { "type": "string", "format": "date-time" },
+        "visibility": { "type": "number", "minimum": 0, "maximum": 1 },
+        "frameFingerprint": { "type": "string", "minLength": 1 },
+        "count": { "type": "integer", "minimum": 0 },
+        "manipulationSuspected": { "type": "boolean", "default": false }
+      }
+    },
+    "observer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observerId", "role", "value", "confidence", "modelVersion", "samples"],
+      "properties": {
+        "observerId": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["edge", "primary_vision", "verification"] },
+        "value": { "type": "integer", "minimum": 0 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "modelVersion": { "type": "string", "minLength": 1 },
+        "samples": { "type": "array", "items": { "$ref": "#/$defs/sample" } }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "mediaType", "digest", "sizeBytes"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

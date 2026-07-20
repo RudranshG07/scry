@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "scry-observation/1",
+  "marketId": "pune-ev-lot",
+  "streamId": "stream-pune-ev-lot",
+  "ruleHash": "0x58fe80df3d960ed8fc9c2b809f8c1640193f58c470f79ce0fc8b6676f054d2db",
+  "window": {
+    "startsAt": "2026-07-20T14:00:00.000Z",
+    "endsAt": "2026-07-20T14:00:02.000Z"
+  },
+  "generatedAt": "2026-07-20T14:00:03.000Z",
+  "healthPolicy": {
+    "minimumUptime": 1,
+    "maximumTimestampDriftMs": 500,
+    "minimumVisibility": 0.9,
+    "maximumFrozenSeconds": 2,
+    "expectedSampleIntervalMs": 1000
+  },
+  "resolutionPolicy": {
+    "minimumObservers": 2,
+    "maximumValueDivergence": 2
+  },
+  "outcomes": [
+    {"outcomeId":"yes","minimum":110},
+    {"outcomeId":"no","maximum":109}
+  ],
+  "observers": [
+    {
+      "observerId":"observer-edge-01",
+      "role":"edge",
+      "value":100,
+      "confidence":0.98,
+      "modelVersion":"edge-agent/1.4.2",
+      "samples":[
+        {"sourceTimestamp":"2026-07-20T14:00:00.000Z","receivedTimestamp":"2026-07-20T14:00:00.100Z","visibility":0.99,"frameFingerprint":"edge-a","count":98},
+        {"sourceTimestamp":"2026-07-20T14:00:01.000Z","receivedTimestamp":"2026-07-20T14:00:01.100Z","visibility":0.99,"frameFingerprint":"edge-b","count":100}
+      ]
+    },
+    {
+      "observerId":"observer-vision-01",
+      "role":"primary_vision",
+      "value":120,
+      "confidence":0.97,
+      "modelVersion":"counter/3.8.0",
+      "samples":[
+        {"sourceTimestamp":"2026-07-20T14:00:00.000Z","receivedTimestamp":"2026-07-20T14:00:00.110Z","visibility":0.98,"frameFingerprint":"vision-a","count":118},
+        {"sourceTimestamp":"2026-07-20T14:00:01.000Z","receivedTimestamp":"2026-07-20T14:00:01.110Z","visibility":0.98,"frameFingerprint":"vision-b","count":120}
+      ]
+    },
+    {
+      "observerId":"observer-verify-01",
+      "role":"verification",
+      "value":140,
+      "confidence":0.96,
+      "modelVersion":"verifier/2.1.0",
+      "samples":[
+        {"sourceTimestamp":"2026-07-20T14:00:00.000Z","receivedTimestamp":"2026-07-20T14:00:00.120Z","visibility":0.97,"frameFingerprint":"verify-a","count":138},
+        {"sourceTimestamp":"2026-07-20T14:00:01.000Z","receivedTimestamp":"2026-07-20T14:00:01.120Z","visibility":0.97,"frameFingerprint":"verify-b","count":140}
+      ]
+    }
+  ],
+  "artifacts": []
+}

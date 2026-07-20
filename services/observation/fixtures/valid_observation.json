@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "scry-observation/1",
+  "marketId": "indore-gate-a",
+  "streamId": "stream-indore-gate-a",
+  "ruleHash": "0x6a91e14b7c332c1b8040f0bc9705dccb79d6a0ed8e40d02fd7db81cce8a5f07c",
+  "window": {
+    "startsAt": "2026-07-20T13:50:00.000Z",
+    "endsAt": "2026-07-20T13:50:05.000Z"
+  },
+  "generatedAt": "2026-07-20T13:50:06.000Z",
+  "healthPolicy": {
+    "minimumUptime": 0.8,
+    "maximumTimestampDriftMs": 500,
+    "minimumVisibility": 0.9,
+    "maximumFrozenSeconds": 2,
+    "expectedSampleIntervalMs": 1000
+  },
+  "resolutionPolicy": {
+    "minimumObservers": 2,
+    "maximumValueDivergence": 2
+  },
+  "outcomes": [
+    {
+      "outcomeId": "yes",
+      "minimum": 181
+    },
+    {
+      "outcomeId": "no",
+      "maximum": 180
+    }
+  ],
+  "observers": [
+    {
+      "observerId": "observer-edge-01",
+      "role": "edge",
+      "value": 181,
+      "confidence": 0.98,
+      "modelVersion": "edge-agent/1.4.2",
+      "samples": [
+        {"sourceTimestamp":"2026-07-20T13:50:00.000Z","receivedTimestamp":"2026-07-20T13:50:00.090Z","visibility":0.99,"frameFingerprint":"edge-0","count":176},
+        {"sourceTimestamp":"2026-07-20T13:50:01.000Z","receivedTimestamp":"2026-07-20T13:50:01.100Z","visibility":0.99,"frameFingerprint":"edge-1","count":177},
+        {"sourceTimestamp":"2026-07-20T13:50:02.000Z","receivedTimestamp":"2026-07-20T13:50:02.110Z","visibility":0.98,"frameFingerprint":"edge-2","count":178},
+        {"sourceTimestamp":"2026-07-20T13:50:03.000Z","receivedTimestamp":"2026-07-20T13:50:03.090Z","visibility":0.99,"frameFingerprint":"edge-3","count":180},
+        {"sourceTimestamp":"2026-07-20T13:50:04.000Z","receivedTimestamp":"2026-07-20T13:50:04.100Z","visibility":0.99,"frameFingerprint":"edge-4","count":181}
+      ]
+    },
+    {
+      "observerId": "observer-vision-01",
+      "role": "primary_vision",
+      "value": 182,
+      "confidence": 0.96,
+      "modelVersion": "counter/3.8.0",
+      "samples": [
+        {"sourceTimestamp":"2026-07-20T13:50:00.000Z","receivedTimestamp":"2026-07-20T13:50:00.120Z","visibility":0.97,"frameFingerprint":"vision-0","count":176},
+        {"sourceTimestamp":"2026-07-20T13:50:01.000Z","receivedTimestamp":"2026-07-20T13:50:01.130Z","visibility":0.98,"frameFingerprint":"vision-1","count":177},
+        {"sourceTimestamp":"2026-07-20T13:50:02.000Z","receivedTimestamp":"2026-07-20T13:50:02.140Z","visibility":0.98,"frameFingerprint":"vision-2","count":179},
+        {"sourceTimestamp":"2026-07-20T13:50:03.000Z","receivedTimestamp":"2026-07-20T13:50:03.120Z","visibility":0.97,"frameFingerprint":"vision-3","count":180},
+        {"sourceTimestamp":"2026-07-20T13:50:04.000Z","receivedTimestamp":"2026-07-20T13:50:04.130Z","visibility":0.98,"frameFingerprint":"vision-4","count":182}
+      ]
+    },
+    {
+      "observerId": "observer-verify-01",
+      "role": "verification",
+      "value": 170,
+      "confidence": 0.61,
+      "modelVersion": "verifier/2.1.0",
+      "samples": [
+        {"sourceTimestamp":"2026-07-20T13:50:00.000Z","receivedTimestamp":"2026-07-20T13:50:00.800Z","visibility":0.4,"frameFingerprint":"verify-frozen","count":170}
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "count-timeline.json",
+      "mediaType": "application/json",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 2048
+    },
+    {
+      "name": "stream-health.json",
+      "mediaType": "application/json",
+      "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sizeBytes": 1024
+    }
+  ]
+}
