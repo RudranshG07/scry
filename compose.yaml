@@ -1,0 +1,51 @@
+name: scry
+
+services:
+  timescale:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scry
+      POSTGRES_USER: scry
+      POSTGRES_PASSWORD: ${SCRY_POSTGRES_PASSWORD:?SCRY_POSTGRES_PASSWORD is required}
+    ports:
+      - 127.0.0.1:${SCRY_POSTGRES_PORT:-5432}:5432
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U scry -d scry]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --maxmemory-policy, allkeys-lru]
+    ports:
+      - 127.0.0.1:${SCRY_REDIS_PORT:-6379}:6379
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: nats:2.11-alpine
+    restart: unless-stopped
+    command: [-c, /etc/nats/nats.conf]
+    ports:
+      - 127.0.0.1:${SCRY_NATS_PORT:-4222}:4222
+      - 127.0.0.1:${SCRY_NATS_MONITOR_PORT:-8222}:8222
+    volumes:
+      - ./infrastructure/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+
+volumes:
+  timescale-data:
+  redis-data:
+  nats-data:

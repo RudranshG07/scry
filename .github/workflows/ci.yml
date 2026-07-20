@@ -33,5 +33,8 @@ jobs:
       - run: npm run test:forecasting
       - run: npm run test:operations
       - run: npm run test:qualification
+      - run: docker compose config --quiet
+        env:
+          SCRY_POSTGRES_PASSWORD: ci-only
       - run: npm audit --audit-level=moderate
       - run: npm run build
