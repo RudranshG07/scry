@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/operations-output.json",
+  "title": "Scry operations evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "criticalCount", "warningCount", "alerts"],
+  "properties": {
+    "status": { "enum": ["healthy", "attention"] },
+    "criticalCount": { "type": "integer", "minimum": 0 },
+    "warningCount": { "type": "integer", "minimum": 0 },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "resource_id", "message", "measured_value", "threshold", "fingerprint", "recorded_at"],
+        "properties": {
+          "code": { "enum": ["stream_uptime_below_policy", "timestamp_drift_above_policy", "observer_divergence", "evidence_unavailable", "resolution_latency_above_policy", "chain_index_lag", "treasury_exposure_above_cap", "invalid_market_rate_above_policy"] },
+          "severity": { "enum": ["warning", "critical"] },
+          "resource_id": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 },
+          "measured_value": { "type": ["number", "null"] },
+          "threshold": { "type": ["number", "null"] },
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "recorded_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

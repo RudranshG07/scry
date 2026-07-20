@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/operations-input.json",
+  "title": "Scry operations snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recordedAt", "streamId", "streamUptime", "timestampDriftMs", "observerValues", "evidenceAvailable", "indexLagBlocks", "treasuryExposureUsdc", "invalidMarketRate"],
+  "properties": {
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "streamId": { "type": "string", "minLength": 1 },
+    "marketId": { "type": ["string", "null"] },
+    "streamUptime": { "type": "number", "minimum": 0, "maximum": 1 },
+    "timestampDriftMs": { "type": "number", "minimum": 0 },
+    "observerValues": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+    "evidenceAvailable": { "type": "boolean" },
+    "resolutionLatencySeconds": { "type": ["number", "null"], "minimum": 0 },
+    "indexLagBlocks": { "type": "integer", "minimum": 0 },
+    "treasuryExposureUsdc": { "type": "number", "minimum": 0 },
+    "invalidMarketRate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumStreamUptime": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumTimestampDriftMs": { "type": "number", "minimum": 0 },
+        "maximumObserverDivergence": { "type": "integer", "minimum": 0 },
+        "maximumResolutionLatencySeconds": { "type": "integer", "minimum": 0 },
+        "maximumIndexLagBlocks": { "type": "integer", "minimum": 0 },
+        "maximumTreasuryExposureUsdc": { "type": "number", "minimum": 0 },
+        "maximumInvalidMarketRate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

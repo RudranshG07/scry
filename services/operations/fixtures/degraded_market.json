@@ -1,0 +1,13 @@
+{
+  "recordedAt": "2026-07-20T14:20:00.000Z",
+  "streamId": "stream-indore-gate-a",
+  "marketId": "indore-gate-a",
+  "streamUptime": 0.94,
+  "timestampDriftMs": 840,
+  "observerValues": [181, 182, 194],
+  "evidenceAvailable": false,
+  "resolutionLatencySeconds": 1020,
+  "indexLagBlocks": 18,
+  "treasuryExposureUsdc": 12500,
+  "invalidMarketRate": 0.04
+}
