@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/qualification-input.json",
+  "title": "Scry stream qualification input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["streamId", "writtenPermission", "publicDerivativeAuthorized", "fixedGeometry", "countingRegionDefined", "privacyMaskDefined", "conditions", "measuredUptime", "timestampDriftP95Ms", "obstructionRate", "freezeDetected", "loopDetected", "secondaryEvidenceAvailable", "simultaneousMarketCount"],
+  "properties": {
+    "streamId": { "type": "string", "minLength": 1 },
+    "writtenPermission": { "type": "boolean" },
+    "publicDerivativeAuthorized": { "type": "boolean" },
+    "fixedGeometry": { "type": "boolean" },
+    "countingRegionDefined": { "type": "boolean" },
+    "privacyMaskDefined": { "type": "boolean" },
+    "conditions": { "type": "array", "items": { "$ref": "#/$defs/condition" } },
+    "measuredUptime": { "type": "number", "minimum": 0, "maximum": 1 },
+    "timestampDriftP95Ms": { "type": "number", "minimum": 0 },
+    "obstructionRate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "freezeDetected": { "type": "boolean" },
+    "loopDetected": { "type": "boolean" },
+    "secondaryEvidenceAvailable": { "type": "boolean" },
+    "simultaneousMarketCount": { "type": "integer", "minimum": 0 },
+    "policy": { "$ref": "#/$defs/policy" }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sampleCount", "groundTruthEvents", "truePositives", "falsePositives", "falseNegatives"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "sampleCount": { "type": "integer", "minimum": 0 },
+        "groundTruthEvents": { "type": "integer", "minimum": 0 },
+        "truePositives": { "type": "integer", "minimum": 0 },
+        "falsePositives": { "type": "integer", "minimum": 0 },
+        "falseNegatives": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requiredConditions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "minimumSamplesPerCondition": { "type": "integer", "minimum": 1 },
+        "minimumPrecision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minimumRecall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumCountError": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minimumUptime": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumTimestampDriftP95Ms": { "type": "number", "minimum": 0 },
+        "maximumObstructionRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumSimultaneousMarkets": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

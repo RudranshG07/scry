@@ -32,5 +32,6 @@ jobs:
       - run: npm run test:observation
       - run: npm run test:forecasting
       - run: npm run test:operations
+      - run: npm run test:qualification
       - run: npm audit --audit-level=moderate
       - run: npm run build

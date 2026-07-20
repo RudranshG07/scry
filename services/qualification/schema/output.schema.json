@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/qualification-output.json",
+  "title": "Scry stream qualification decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stream_id", "qualified", "reasons", "precision", "recall", "count_error", "evaluated_conditions"],
+  "properties": {
+    "stream_id": { "type": "string", "minLength": 1 },
+    "qualified": { "type": "boolean" },
+    "reasons": { "type": "array", "uniqueItems": true, "items": { "enum": ["permission_missing", "public_derivative_not_authorized", "geometry_unfixed", "counting_region_missing", "privacy_mask_missing", "condition_coverage_insufficient", "precision_below_policy", "recall_below_policy", "count_error_above_policy", "uptime_below_policy", "timestamp_drift_above_policy", "obstruction_above_policy", "freeze_detected", "loop_detected", "secondary_evidence_missing", "cadence_above_policy"] } },
+    "precision": { "type": "number", "minimum": 0, "maximum": 1 },
+    "recall": { "type": "number", "minimum": 0, "maximum": 1 },
+    "count_error": { "type": "number", "minimum": 0 },
+    "evaluated_conditions": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+  }
+}

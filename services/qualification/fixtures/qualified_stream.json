@@ -1,0 +1,31 @@
+{
+  "streamId": "stream-indore-gate-a",
+  "writtenPermission": true,
+  "publicDerivativeAuthorized": true,
+  "fixedGeometry": true,
+  "countingRegionDefined": true,
+  "privacyMaskDefined": true,
+  "conditions": [
+    {"name":"day","sampleCount":240,"groundTruthEvents":420,"truePositives":410,"falsePositives":8,"falseNegatives":10},
+    {"name":"night","sampleCount":180,"groundTruthEvents":310,"truePositives":301,"falsePositives":7,"falseNegatives":9},
+    {"name":"rain","sampleCount":140,"groundTruthEvents":205,"truePositives":199,"falsePositives":5,"falseNegatives":6}
+  ],
+  "measuredUptime": 0.998,
+  "timestampDriftP95Ms": 180,
+  "obstructionRate": 0.012,
+  "freezeDetected": false,
+  "loopDetected": false,
+  "secondaryEvidenceAvailable": true,
+  "simultaneousMarketCount": 2,
+  "policy": {
+    "requiredConditions": ["day", "night", "rain"],
+    "minimumSamplesPerCondition": 100,
+    "minimumPrecision": 0.95,
+    "minimumRecall": 0.95,
+    "maximumCountError": 0.05,
+    "minimumUptime": 0.99,
+    "maximumTimestampDriftP95Ms": 500,
+    "maximumObstructionRate": 0.05,
+    "maximumSimultaneousMarkets": 2
+  }
+}
