@@ -63,7 +63,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -96,7 +98,7 @@ button:disabled {
   font-size: 0.875rem;
   font-weight: 650;
   outline: none;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+  transition: background-color 100ms ease-out, color 100ms ease-out, border-color 100ms ease-out, opacity 100ms ease-out, transform 100ms ease-out;
 }
 
 .button-primary:focus-visible,
@@ -112,6 +114,13 @@ button:disabled {
 
 .button-primary:hover:not(:disabled) {
   background: var(--primary-hover);
+}
+
+.button-primary:active:not(:disabled),
+.button-secondary:active:not(:disabled),
+.button-ghost:active:not(:disabled),
+button.focus-ring:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .button-secondary {
@@ -133,6 +142,11 @@ button:disabled {
 .button-secondary:disabled,
 .button-ghost:disabled {
   opacity: 0.48;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .glass-panel {
@@ -198,8 +212,16 @@ button:disabled {
   .vehicle-b,
   .vehicle-c,
   .signal-pulse,
-  .animate-pulse {
+  .animate-pulse,
+  .animate-spin {
     animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

@@ -19,6 +19,15 @@ export function SiteHeader() {
   const pathname = usePathname();
   const loading = wallet.status === "checking" || wallet.status === "connecting";
 
+  const desktopLinks = [
+    { href: "/", label: "Live", active: pathname === "/" || pathname.startsWith("/markets/") },
+    { href: "/markets", label: "Markets", active: pathname === "/markets" },
+    { href: "/leaderboard", label: "Leaderboard", active: pathname === "/leaderboard" },
+    { href: "/portfolio", label: "Portfolio", active: pathname === "/portfolio" },
+    { href: "/profile", label: "Profile", active: pathname === "/profile" },
+    { href: "/settings", label: "Controls", active: pathname === "/settings" },
+  ];
+
   const mobileLinks = [
     { href: "/", label: "Live", icon: Radio, active: pathname === "/" || pathname.startsWith("/markets/") },
     { href: "/markets", label: "Markets", icon: CalendarDays, active: pathname === "/markets" },
@@ -38,17 +47,21 @@ export function SiteHeader() {
             <span className="text-lg font-semibold tracking-[-0.04em]">SCRY</span>
           </Link>
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
-            <Link className="button-ghost" href="/">Live</Link>
-            <Link className="button-ghost" href="/markets">Markets</Link>
-            <Link className="button-ghost" href="/leaderboard">Leaderboard</Link>
-            <Link className="button-ghost" href="/portfolio">Portfolio</Link>
-            <Link className="button-ghost" href="/profile">Profile</Link>
-            <Link className="button-ghost" href="/settings">Controls</Link>
+            {desktopLinks.map(({ href, label, active }) => (
+              <Link
+                className={`focus-ring inline-flex min-h-10 items-center rounded-control px-3 text-sm font-semibold transition-colors ${active ? "bg-surface-soft text-foreground" : "text-muted-foreground hover:bg-surface hover:text-foreground"}`}
+                href={href}
+                key={href}
+                aria-current={active ? "page" : undefined}
+              >
+                {label}
+              </Link>
+            ))}
           </nav>
           <div className="flex items-center gap-2">
             <span className="hidden min-h-10 items-center gap-2 rounded-control border border-border bg-surface px-3 text-xs font-medium text-muted-foreground xl:flex">
               <span className="size-1.5 rounded-full bg-accent" />
-              Base preview
+              Base · Forecast only
             </span>
             <Link className="focus-ring grid size-10 shrink-0 place-items-center rounded-control border border-border bg-surface text-muted-foreground hover:text-foreground" href="/notifications" aria-label="Open notifications"><Bell className="size-4" aria-hidden="true" /></Link>
             <button

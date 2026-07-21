@@ -76,7 +76,9 @@ function MarketRail({
 }) {
   const { settings } = useExperience();
   const visibleMarkets = useMemo(
-    () => markets.filter((market) => selectedCategory === "All" || market.category === selectedCategory),
+    () => markets.filter(
+      (market) => market.status !== "Scheduled" && (selectedCategory === "All" || market.category === selectedCategory),
+    ),
     [selectedCategory],
   );
 
@@ -87,7 +89,7 @@ function MarketRail({
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Discovery</p>
           <h2 className="mt-1 font-semibold">Live rooms</h2>
         </div>
-        <span className="rounded-full bg-accent/12 px-2 py-1 font-mono text-xs text-accent">3 live</span>
+        <span className="rounded-full bg-accent/12 px-2 py-1 font-mono text-xs text-accent">{markets.filter((market) => market.status !== "Scheduled").length} live</span>
       </div>
       <div className="mt-3 flex w-full max-w-full gap-2 overflow-x-auto pb-2 xl:grid xl:grid-cols-2" aria-label="Market categories">
         {categories.map((category) => (
@@ -319,6 +321,46 @@ function ProbabilityChart({ market }: { market: Market }) {
   );
 }
 
+const lifecycleSteps = ["Scheduled", "Open", "Observing", "Resolve"] as const;
+
+function lifecycleIndex(status: Market["status"]) {
+  if (status === "Scheduled") return 0;
+  if (status === "Open") return 1;
+  if (status === "Locked" || status === "Observing") return 2;
+  return 3;
+}
+
+function MarketLifecycle({ market }: { market: Market }) {
+  const activeIndex = lifecycleIndex(market.status);
+
+  return (
+    <section className="mb-5 rounded-card border border-border bg-surface px-4 py-3" aria-label="Market lifecycle">
+      <div className="flex items-center justify-between gap-4 overflow-x-auto">
+        {lifecycleSteps.map((step, index) => {
+          const complete = index < activeIndex;
+          const active = index === activeIndex;
+          return (
+            <div className="flex min-w-0 flex-1 items-center" key={step}>
+              <div className="flex min-w-max items-center gap-2">
+                <span className={`grid size-7 place-items-center rounded-full font-mono text-xs font-semibold ${complete ? "bg-accent/12 text-accent" : active ? "bg-primary text-primary-foreground" : "bg-surface-soft text-muted-foreground"}`}>
+                  {complete ? <Check className="size-3.5" aria-hidden="true" /> : index + 1}
+                </span>
+                <span className={`text-xs font-semibold ${active ? "text-foreground" : "text-muted-foreground"}`}>{step}</span>
+              </div>
+              {index < lifecycleSteps.length - 1 && <span className={`mx-3 h-px min-w-5 flex-1 ${index < activeIndex ? "bg-accent/50" : "bg-border"}`} />}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+        Current state: <span className="font-semibold text-foreground">{market.status}</span>
+        <span aria-hidden="true"> · </span>
+        Rules and outcome bands remain fixed after opening.
+      </p>
+    </section>
+  );
+}
+
 function PositionPanel({ market }: { market: Market }) {
   const wallet = useWallet();
   const { settings, isCoolingOff, saveForecast } = useExperience();
@@ -368,7 +410,7 @@ function PositionPanel({ market }: { market: Market }) {
   }
 
   return (
-    <aside className="min-w-0 rounded-card border border-border bg-surface p-4 sm:p-5">
+    <aside className="min-w-0 self-start rounded-card border border-border bg-surface p-4 sm:p-5 xl:sticky xl:top-20">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Make a call</p>
@@ -402,9 +444,14 @@ function PositionPanel({ market }: { market: Market }) {
                   setMessage("");
                 }}
               >
-                <span>
-                  <span className="block text-sm font-semibold">{outcome.label}</span>
-                  <span className="mt-1 block font-mono text-xs text-muted-foreground">{mode === "forecast" ? "Forecast outcome" : `${outcome.returnRate.toFixed(2)}× return`}</span>
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className={`grid size-6 shrink-0 place-items-center rounded-full border ${selectedOutcome === outcome.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-transparent"}`}>
+                    <Check className="size-3.5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">{outcome.label}</span>
+                    <span className="mt-1 block font-mono text-xs text-muted-foreground">{mode === "forecast" ? "Forecast outcome" : `${outcome.returnRate.toFixed(2)}× return`}</span>
+                  </span>
                 </span>
                 <span className="font-mono text-lg font-semibold">{outcome.probability}%</span>
               </button>
@@ -478,6 +525,14 @@ function PositionPanel({ market }: { market: Market }) {
           <div className={`mt-3 flex items-start gap-2 rounded-control p-3 text-xs leading-5 ${state === "error" ? "bg-danger/8 text-danger" : "bg-accent/8 text-accent"}`} role={state === "error" ? "alert" : "status"}>
             {state === "error" ? <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
             {message}
+          </div>
+        )}
+        {mode === "position" && state === "success" && selected && (
+          <div className="mt-3 rounded-control border border-border bg-surface-raised p-4" aria-label="Position review summary">
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Outcome</span><span className="text-sm font-semibold">{selected.label}</span></div>
+            <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Position</span><span className="font-mono text-sm font-semibold">{numericStake.toFixed(2)} USDC</span></div>
+            <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Estimated return</span><span className="font-mono text-sm font-semibold text-accent">{expectedReturn.toFixed(2)} USDC</span></div>
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3"><span className="text-xs text-muted-foreground">Settlement</span><span className="text-xs font-semibold text-warning">Contract connection pending</span></div>
           </div>
         )}
       </form>
@@ -636,12 +691,14 @@ export function ScryDashboard({ initialMarketId = markets[0].id }: { initialMark
               Live physical-world forecasts
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] md:text-4xl">Watch the world live. Predict what happens next.</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">Follow qualified streams, compare human and model forecasts, then inspect how every result was observed.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex min-h-10 items-center gap-2 rounded-control border border-border bg-surface px-3 text-xs font-medium text-muted-foreground"><Activity className="size-4 text-accent" aria-hidden="true" />8 qualified streams</span>
             <Link className="focus-ring grid size-10 place-items-center rounded-control border border-border bg-surface text-muted-foreground hover:text-foreground" href="/notifications" aria-label="Open notifications"><Bell className="size-4" aria-hidden="true" /></Link>
           </div>
         </section>
+        <MarketLifecycle market={market} />
         <ResultReveal market={market} />
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[250px_minmax(0,1fr)_350px]">
           <MarketRail selected={selectedId} selectedCategory={selectedCategory} onSelect={selectMarket} onCategory={setSelectedCategory} />
