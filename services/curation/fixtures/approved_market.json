@@ -1,0 +1,24 @@
+{
+  "marketId": "indore-gate-a",
+  "streamId": "stream-indore-gate-a",
+  "category": "Traffic",
+  "question": "Will more than 180 vehicles enter during the observation window?",
+  "streamQualified": true,
+  "privacySensitive": false,
+  "operationallyMeaningful": true,
+  "historicalValues": [172, 181, 178, 187, 175, 184, 179, 189, 174, 183, 177, 186, 171, 182, 176, 188, 173, 185, 180, 190, 170, 181, 179, 187, 175, 184, 178, 189, 174, 183, 177, 186, 172, 182, 176, 188, 173, 185, 180, 190],
+  "outcomes": [
+    { "outcomeId": "no", "label": "180 or below", "maximum": 180 },
+    { "outcomeId": "yes", "label": "Above 180", "minimum": 181 }
+  ],
+  "opensAt": "2026-07-20T13:45:00.000Z",
+  "locksAt": "2026-07-20T13:50:00.000Z",
+  "observationStartsAt": "2026-07-20T13:50:00.000Z",
+  "observationEndsAt": "2026-07-20T13:50:05.000Z",
+  "currentSimultaneousMarkets": 1,
+  "estimatedCountError": 0.03,
+  "countingRule": "Tracked vehicle centroid crosses the inward count line once during the observation window.",
+  "minimumUptime": 0.99,
+  "maximumTimestampDriftMs": 500,
+  "maximumObserverDivergence": 2
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/curation-output.json",
+  "title": "Scry market curation decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["market_id", "approved", "reasons", "rule_hash", "outcome_probabilities", "historical_sample_count", "relative_dispersion"],
+  "properties": {
+    "market_id": { "type": "string", "minLength": 1 },
+    "approved": { "type": "boolean" },
+    "reasons": { "type": "array", "uniqueItems": true, "items": { "enum": ["stream_not_qualified", "privacy_sensitive", "operational_value_missing", "insufficient_history", "outcomes_invalid", "outcome_too_predictable", "history_too_noisy", "resolution_error_above_policy", "cadence_above_policy", "timeline_invalid"] } },
+    "rule_hash": { "type": ["string", "null"], "pattern": "^0x[0-9a-f]{64}$" },
+    "outcome_probabilities": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+    "historical_sample_count": { "type": "integer", "minimum": 0 },
+    "relative_dispersion": { "type": "number", "minimum": 0 }
+  }
+}

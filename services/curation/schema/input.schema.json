@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/curation-input.json",
+  "title": "Scry market curation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["marketId", "streamId", "category", "question", "streamQualified", "privacySensitive", "operationallyMeaningful", "historicalValues", "outcomes", "opensAt", "locksAt", "observationStartsAt", "observationEndsAt", "currentSimultaneousMarkets", "estimatedCountError", "countingRule", "minimumUptime", "maximumTimestampDriftMs", "maximumObserverDivergence"],
+  "properties": {
+    "marketId": { "type": "string", "minLength": 1 },
+    "streamId": { "type": "string", "minLength": 1 },
+    "category": { "enum": ["Traffic", "Parking", "Queues", "Operations", "Footfall", "Mobility", "Weather"] },
+    "question": { "type": "string", "minLength": 1 },
+    "streamQualified": { "type": "boolean" },
+    "privacySensitive": { "type": "boolean" },
+    "operationallyMeaningful": { "type": "boolean" },
+    "historicalValues": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+    "outcomes": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/outcome" } },
+    "opensAt": { "type": "string", "format": "date-time" },
+    "locksAt": { "type": "string", "format": "date-time" },
+    "observationStartsAt": { "type": "string", "format": "date-time" },
+    "observationEndsAt": { "type": "string", "format": "date-time" },
+    "currentSimultaneousMarkets": { "type": "integer", "minimum": 0 },
+    "estimatedCountError": { "type": "number", "minimum": 0, "maximum": 1 },
+    "countingRule": { "type": "string", "minLength": 1 },
+    "minimumUptime": { "type": "number", "minimum": 0, "maximum": 1 },
+    "maximumTimestampDriftMs": { "type": "number", "minimum": 0 },
+    "maximumObserverDivergence": { "type": "integer", "minimum": 0 },
+    "policy": { "$ref": "#/$defs/policy" }
+  },
+  "$defs": {
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcomeId", "label"],
+      "properties": {
+        "outcomeId": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "minimum": { "type": "integer", "minimum": 0 },
+        "maximum": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumHistorySamples": { "type": "integer", "minimum": 2 },
+        "maximumDominantOutcomeProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumRelativeDispersion": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumEstimatedCountError": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumSimultaneousMarkets": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

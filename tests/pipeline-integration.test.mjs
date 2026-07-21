@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { decodeFinalizedEvent } from "../services/indexer/event-codec.ts";
 import { MarketProjector } from "../services/indexer/projector.ts";
@@ -19,16 +20,30 @@ function metadata(sequence) {
 }
 
 test("observation commitment projects through the finalized event boundary", () => {
+  const curation = JSON.parse(execFileSync(
+    "python3",
+    ["-m", "scry_curation.cli", "services/curation/fixtures/approved_market.json"],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, PYTHONPATH: "services/curation" },
+      encoding: "utf8",
+    },
+  ));
+  const observationInput = JSON.parse(readFileSync("services/observation/fixtures/valid_observation.json", "utf8"));
+  observationInput.ruleHash = curation.rule_hash;
   const raw = execFileSync(
     "python3",
-    ["-m", "scry_observation.cli", "services/observation/fixtures/valid_observation.json"],
+    ["-c", "import json,sys; from scry_observation.pipeline import execute_observation; print(json.dumps(execute_observation(json.load(sys.stdin))))"],
     {
       cwd: process.cwd(),
       env: { ...process.env, PYTHONPATH: "services/observation" },
       encoding: "utf8",
+      input: JSON.stringify(observationInput),
     },
   );
   const observation = JSON.parse(raw);
+  assert.equal(curation.approved, true);
+  assert.equal(observation.commitment.payload.ruleHash, curation.rule_hash);
   const projector = new MarketProjector();
   projector.apply(decodeFinalizedEvent({
     ...metadata(1),
