@@ -11,3 +11,6 @@ tsconfig.tsbuildinfo
 .pytest_cache/
 coverage/
 *.log
+contracts/out/
+contracts/cache/
+contracts/broadcast/
