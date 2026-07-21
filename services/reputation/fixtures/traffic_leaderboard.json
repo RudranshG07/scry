@@ -1,0 +1,21 @@
+{
+  "scope": { "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10 },
+  "resolvedForecasts": [
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.80, "occurred": true, "numericalForecast": 184, "actualValue": 182 },
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.75, "occurred": true, "numericalForecast": 177, "actualValue": 180 },
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.25, "occurred": false, "numericalForecast": 159, "actualValue": 162 },
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.70, "occurred": true, "numericalForecast": 191, "actualValue": 188 },
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.30, "occurred": false, "numericalForecast": 168, "actualValue": 165 },
+    { "forecasterId": "atlas-flow", "kind": "Agent", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.80, "occurred": true, "numericalForecast": 186, "actualValue": 183 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.65, "occurred": true, "numericalForecast": 179, "actualValue": 182 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.60, "occurred": true, "numericalForecast": 175, "actualValue": 180 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.45, "occurred": false, "numericalForecast": 166, "actualValue": 162 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.55, "occurred": true, "numericalForecast": 181, "actualValue": 188 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.55, "occurred": false, "numericalForecast": 172, "actualValue": 165 },
+    { "forecasterId": "signal-fox", "kind": "Human", "category": "Traffic", "location": "Indore Gate A", "horizonMinutes": 10, "probability": 0.60, "occurred": true, "numericalForecast": 180, "actualValue": 183 }
+  ],
+  "liveForecasts": [
+    { "forecasterId": "atlas-flow", "probability": 0.72 },
+    { "forecasterId": "signal-fox", "probability": 0.61 }
+  ]
+}

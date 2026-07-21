@@ -34,6 +34,8 @@ jobs:
       - run: npm run test:operations
       - run: npm run test:qualification
       - run: npm run test:vision
+      - run: npm run test:curation
+      - run: npm run test:reputation
       - run: docker compose config --quiet
         env:
           SCRY_POSTGRES_PASSWORD: ci-only

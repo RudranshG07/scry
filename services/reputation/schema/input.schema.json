@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/reputation-input.json",
+  "title": "Scry forecaster reputation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope", "resolvedForecasts"],
+  "properties": {
+    "scope": { "$ref": "#/$defs/scope" },
+    "resolvedForecasts": { "type": "array", "items": { "$ref": "#/$defs/resolvedForecast" } },
+    "liveForecasts": { "type": "array", "items": { "$ref": "#/$defs/liveForecast" } },
+    "policy": { "$ref": "#/$defs/policy" }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "location", "horizonMinutes"],
+      "properties": {
+        "category": { "enum": ["Traffic", "Parking", "Queues", "Operations", "Footfall", "Mobility", "Weather"] },
+        "location": { "type": "string", "minLength": 1 },
+        "horizonMinutes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "resolvedForecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forecasterId", "kind", "category", "location", "horizonMinutes", "probability", "occurred"],
+      "properties": {
+        "forecasterId": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["Human", "Agent"] },
+        "category": { "enum": ["Traffic", "Parking", "Queues", "Operations", "Footfall", "Mobility", "Weather"] },
+        "location": { "type": "string", "minLength": 1 },
+        "horizonMinutes": { "type": "integer", "minimum": 1 },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "occurred": { "type": "boolean" },
+        "numericalForecast": { "type": "number", "minimum": 0 },
+        "actualValue": { "type": "number", "minimum": 0 }
+      }
+    },
+    "liveForecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forecasterId", "probability"],
+      "properties": {
+        "forecasterId": { "type": "string", "minLength": 1 },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumResolvedForecasts": { "type": "integer", "minimum": 1 },
+        "maximumBrierScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "calibrationBucketCount": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

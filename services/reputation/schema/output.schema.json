@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scry.local/schema/reputation-output.json",
+  "title": "Scry forecaster reputation output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope", "leaderboard", "consensus"],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "location", "horizon_bucket"],
+      "properties": {
+        "category": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "horizon_bucket": { "enum": ["short", "medium", "long"] }
+      }
+    },
+    "leaderboard": { "type": "array", "items": { "$ref": "#/$defs/score" } },
+    "consensus": { "$ref": "#/$defs/consensus" }
+  },
+  "$defs": {
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "forecaster_id", "kind", "category", "location", "horizon_bucket", "sample_count", "brier_score", "calibration_error", "numerical_mean_absolute_error", "composite_score", "eligible"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "forecaster_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["Human", "Agent"] },
+        "category": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "horizon_bucket": { "enum": ["short", "medium", "long"] },
+        "sample_count": { "type": "integer", "minimum": 1 },
+        "brier_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "calibration_error": { "type": "number", "minimum": 0, "maximum": 1 },
+        "numerical_mean_absolute_error": { "type": ["number", "null"], "minimum": 0 },
+        "composite_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "eligible": { "type": "boolean" }
+      }
+    },
+    "consensus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["probability", "contributor_count", "total_weight", "forecaster_ids"],
+      "properties": {
+        "probability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "contributor_count": { "type": "integer", "minimum": 0 },
+        "total_weight": { "type": "number", "minimum": 0 },
+        "forecaster_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

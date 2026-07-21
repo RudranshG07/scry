@@ -6,7 +6,7 @@ const directory = new URL("../database/migrations/", import.meta.url);
 
 test("database migrations are ordered transactions without inline comments", () => {
   const names = readdirSync(directory).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names, ["001_core.sql", "002_timeseries.sql", "003_operations.sql"]);
+  assert.deepEqual(names, ["001_core.sql", "002_timeseries.sql", "003_operations.sql", "004_reputation.sql"]);
   for (const name of names) {
     const sql = readFileSync(new URL(name, directory), "utf8");
     assert.match(sql, /^BEGIN;/);
@@ -30,6 +30,7 @@ test("database migrations cover durable events, time series, evidence, and alert
     "evidence_records",
     "indexer_checkpoints",
     "operational_alerts",
+    "forecaster_reputation_snapshots",
   ]) {
     assert.match(sql, new RegExp(`CREATE TABLE ${table} \\(`));
   }
