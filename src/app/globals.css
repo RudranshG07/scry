@@ -149,6 +149,21 @@ button.focus-ring:active:not(:disabled) {
   color: var(--primary-foreground);
 }
 
+.landing-page {
+  background:
+    radial-gradient(circle at 82% 10%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28rem),
+    radial-gradient(circle at 12% 38%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 24rem),
+    var(--background);
+}
+
+.landing-beam {
+  background: linear-gradient(90deg, transparent, var(--primary), var(--accent), transparent);
+}
+
+.landing-preview {
+  box-shadow: 0 32px 96px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
 .glass-panel {
   background: rgb(17 19 30 / 88%);
   backdrop-filter: blur(18px);

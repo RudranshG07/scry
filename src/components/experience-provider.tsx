@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, ShieldCheck, TimerReset, WifiOff } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { FormEvent, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type Jurisdiction = "India" | "Outside India" | "Undisclosed";
@@ -145,6 +146,7 @@ function AccessGate({ onContinue }: { onContinue: (jurisdiction: Jurisdiction) =
 }
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [settings, setSettings] = useState(defaultSettings);
   const [ready, setReady] = useState(false);
   const [online, setOnline] = useState(true);
@@ -242,6 +244,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     () => ({ settings, isCoolingOff, updateSettings, toggleReminder, saveForecast, startCoolOff, resetAccess }),
     [settings, isCoolingOff, updateSettings, toggleReminder, saveForecast, startCoolOff, resetAccess],
   );
+
+  if (pathname === "/") return children;
 
   if (!ready) {
     return <main className="grid min-h-screen place-items-center" aria-live="polite"><div className="h-10 w-36 animate-pulse rounded-control bg-surface" /></main>;

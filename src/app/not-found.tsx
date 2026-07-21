@@ -13,7 +13,7 @@ export default function NotFound() {
           </span>
           <h1 className="mt-5 text-2xl font-semibold">This market is not on the board</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">It may have been removed, renamed, or has not opened yet.</p>
-          <Link className="button-primary mt-6" href="/"><ArrowLeft className="size-4" aria-hidden="true" />Back to live markets</Link>
+          <Link className="button-primary mt-6" href="/live"><ArrowLeft className="size-4" aria-hidden="true" />Back to live markets</Link>
         </section>
       </main>
     </div>

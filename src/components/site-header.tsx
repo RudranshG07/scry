@@ -20,7 +20,7 @@ export function SiteHeader() {
   const loading = wallet.status === "checking" || wallet.status === "connecting";
 
   const desktopLinks = [
-    { href: "/", label: "Live", active: pathname === "/" || pathname.startsWith("/markets/") },
+    { href: "/live", label: "Live", active: pathname === "/live" || pathname.startsWith("/markets/") },
     { href: "/markets", label: "Markets", active: pathname === "/markets" },
     { href: "/leaderboard", label: "Leaderboard", active: pathname === "/leaderboard" },
     { href: "/portfolio", label: "Portfolio", active: pathname === "/portfolio" },
@@ -29,7 +29,7 @@ export function SiteHeader() {
   ];
 
   const mobileLinks = [
-    { href: "/", label: "Live", icon: Radio, active: pathname === "/" || pathname.startsWith("/markets/") },
+    { href: "/live", label: "Live", icon: Radio, active: pathname === "/live" || pathname.startsWith("/markets/") },
     { href: "/markets", label: "Markets", icon: CalendarDays, active: pathname === "/markets" },
     { href: "/leaderboard", label: "Ranks", icon: Trophy, active: pathname === "/leaderboard" },
     { href: "/portfolio", label: "Portfolio", icon: WalletCards, active: pathname === "/portfolio" },
