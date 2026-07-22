@@ -1,8 +1,9 @@
 "use client";
 
-import { Bell, BellRing, CheckCheck, CircleAlert, Radio, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
+import { Bell, BellRing, CheckCheck, CircleAlert, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { BrowserNotificationControl } from "@/components/browser-notifications";
 import { useExperience } from "@/components/experience-provider";
 import { SiteHeader } from "@/components/site-header";
 import { useWallet } from "@/components/wallet-provider";
@@ -96,7 +97,7 @@ export function NotificationsView() {
             </div>
           </section>
         )}
-        <section className="mt-4 flex items-start gap-3 rounded-card border border-border bg-surface p-4"><Radio className="mt-0.5 size-5 shrink-0 text-ring" aria-hidden="true" /><div><h2 className="font-semibold">Browser notification delivery is not enabled</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">This preview keeps alerts inside Scry. Push delivery can be connected after notification permissions and backend delivery are ready.</p></div></section>
+        <BrowserNotificationControl />
       </main>
     </div>
   );

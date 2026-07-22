@@ -3,6 +3,7 @@
 import { Eye, ShieldCheck, TimerReset, WifiOff } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { FormEvent, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { BrowserNotificationDelivery } from "@/components/browser-notifications";
 
 export type Jurisdiction = "India" | "Outside India" | "Undisclosed";
 
@@ -259,6 +260,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     <ExperienceContext.Provider value={value}>
       {!online && <div className="sticky top-0 z-50 flex min-h-10 items-center justify-center gap-2 bg-warning px-4 text-center text-xs font-semibold text-background" role="status"><WifiOff className="size-4" aria-hidden="true" />You are offline. Live counts and previews may be stale.</div>}
       {children}
+      <BrowserNotificationDelivery />
       {sessionNotice && (
         <div className="fixed bottom-24 left-4 right-4 z-50 mx-auto max-w-md rounded-card border border-border bg-surface-raised p-4 shadow-xl md:bottom-6" role="status">
           <div className="flex items-start gap-3">
