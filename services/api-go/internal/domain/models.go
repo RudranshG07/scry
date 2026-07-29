@@ -107,3 +107,30 @@ type Notification struct {
 	MarketID  *string `json:"marketId,omitempty"`
 	CreatedAt string  `json:"createdAt"`
 }
+
+// ObserverReport is one observer's answer for a market, submitted over the
+// network. Observers are meant to be independent, so the API is the only way in.
+type ObserverReport struct {
+	MarketID       string        `json:"marketId"`
+	ObserverID     string        `json:"observerId"`
+	Role           string        `json:"role"`
+	ObservedValue  int64         `json:"observedValue"`
+	Confidence     float64       `json:"confidence"`
+	ModelVersion   string        `json:"modelVersion"`
+	Uptime         float64       `json:"uptime"`
+	DriftMS        float64       `json:"maximumTimestampDriftMs"`
+	Visibility     float64       `json:"averageVisibility"`
+	FrozenSeconds  float64       `json:"longestFrozenSeconds"`
+	InvalidReasons []string      `json:"invalidReasons"`
+	Signature      *string       `json:"signature,omitempty"`
+	Counts         []CountSample `json:"counts,omitempty"`
+}
+
+// CountSample is one interval of counting behind a report.
+type CountSample struct {
+	ObservedAt      string  `json:"observedAt"`
+	Count           int64   `json:"count"`
+	IntervalSeconds int     `json:"intervalSeconds"`
+	Quality         float64 `json:"streamQuality"`
+	ModelVersion    string  `json:"modelVersion"`
+}

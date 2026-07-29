@@ -52,6 +52,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /v1/notifications", server.getNotifications)
 	server.mux.HandleFunc("GET /v1/streams/{id}/playback-token", server.getPlaybackToken)
 	server.mux.HandleFunc("GET /v1/markets/{id}/stream", server.marketStream)
+	server.mux.HandleFunc("POST /v1/markets/{id}/observations", server.postObservation)
 }
 
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
