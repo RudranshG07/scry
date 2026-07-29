@@ -26,7 +26,7 @@ func TestConsensus(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, agreed := consensus(c.counts, tolerance, minObservers)
+			got, agreed := consensus(c.counts, minObservers)
 			if agreed != c.agreed {
 				t.Fatalf("agreed = %v, want %v", agreed, c.agreed)
 			}
@@ -39,7 +39,7 @@ func TestConsensus(t *testing.T) {
 
 func TestConsensusDoesNotReorderCaller(t *testing.T) {
 	counts := []int64{300, 181, 182}
-	consensus(counts, tolerance, minObservers)
+	consensus(counts, minObservers)
 	if counts[0] != 300 {
 		t.Errorf("caller slice was sorted in place: %v", counts)
 	}
@@ -108,3 +108,41 @@ func TestRuleHashIsStableAndDistinct(t *testing.T) {
 }
 
 func timeAt(unix int64) time.Time { return time.Unix(unix, 0).UTC() }
+
+func TestAllowedSpreadScalesWithVolume(t *testing.T) {
+	cases := []struct {
+		base, want int64
+	}{
+		{0, 2},  // the floor holds where a percentage is meaningless
+		{10, 2}, // 5% of 10 is below the floor
+		{40, 2}, // 5% of 40 is exactly the floor
+		{100, 5},
+		{135, 7},
+		{300, 15},
+	}
+	for _, c := range cases {
+		if got := allowedSpread(c.base); got != c.want {
+			t.Errorf("allowedSpread(%d) = %d, want %d", c.base, got, c.want)
+		}
+	}
+}
+
+// The two live detector profiles produced 127 and 135 on the same window, a
+// 6.3% spread. The qualification gate accepts 3-5% counting error, so this is a
+// detector that has not earned a result rather than a tolerance set too tight.
+func TestConsensusRejectsDetectorSpreadAboveTheQualificationBar(t *testing.T) {
+	if _, ok := consensus([]int64{127, 135}, minObservers); ok {
+		t.Error("127 and 135 agreed; that is 6.3%, above the 5% bar")
+	}
+	// Tighten the detector and the same window settles.
+	if value, ok := consensus([]int64{131, 135}, minObservers); !ok || value != 135 {
+		t.Errorf("131 and 135 = %d, %v; want agreement inside 5%%", value, ok)
+	}
+}
+
+func TestConsensusStillRejectsWildDisagreement(t *testing.T) {
+	// Proportional tolerance must not become a licence to agree on anything.
+	if _, ok := consensus([]int64{100, 200}, minObservers); ok {
+		t.Error("100 and 200 agreed; 5% of 100 is 5, not 100")
+	}
+}

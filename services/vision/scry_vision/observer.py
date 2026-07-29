@@ -19,14 +19,35 @@ import numpy as np
 from .counter import CountLineTracker
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
 
-MODEL_VERSION = "mog2-centroid/0.1"
-
-# A blob smaller than this on a 640x360 frame is noise, not a vehicle.
-MIN_AREA = 300
 # How far a centroid may move between frames and still be the same vehicle.
 MAX_DRIFT = 70
 # Frames a track survives without a match before it is dropped.
 MAX_MISSES = 8
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Detector settings. Two observers watching the same camera with the same
+    settings will agree even when both are wrong, so the verification observer
+    runs a deliberately different configuration. Disagreement between profiles
+    is a signal that the scene is hard to read, which is what consensus is for.
+    """
+
+    name: str
+    min_area: int
+    var_threshold: int
+    history: int
+
+    @property
+    def version(self) -> str:
+        return f"mog2-centroid/0.1-{self.name}"
+
+
+PRIMARY = Profile(name="primary", min_area=300, var_threshold=40, history=250)
+VERIFY = Profile(name="verify", min_area=220, var_threshold=55, history=150)
+
+PROFILES = {"primary_vision": PRIMARY, "verification": VERIFY, "edge": PRIMARY}
+MODEL_VERSION = PRIMARY.version
 
 
 @dataclass
@@ -95,12 +116,12 @@ class Centroids:
         return matched
 
 
-def detect(mask: np.ndarray) -> list[tuple[Point, float]]:
+def detect(mask: np.ndarray, min_area: int) -> list[tuple[Point, float]]:
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     found = []
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area < MIN_AREA:
+        if area < min_area:
             continue
         x, y, w, h = cv2.boundingRect(contour)
         centroid = Point(x=x + w / 2, y=y + h / 2)
@@ -110,7 +131,8 @@ def detect(mask: np.ndarray) -> list[tuple[Point, float]]:
     return found
 
 
-def observe(url: str, line: CountLine, seconds: float, width: int = 640, height: int = 360) -> dict:
+def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMARY,
+            width: int = 640, height: int = 360) -> dict:
     capture = cv2.VideoCapture(url)
     if not capture.isOpened():
         return {"ok": False, "reason": "stream_unreachable"}
@@ -118,7 +140,8 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
     fps = capture.get(cv2.CAP_PROP_FPS) or 15.0
     budget = int(seconds * fps)
 
-    background = cv2.createBackgroundSubtractorMOG2(history=250, varThreshold=40, detectShadows=True)
+    background = cv2.createBackgroundSubtractorMOG2(
+        history=profile.history, varThreshold=profile.var_threshold, detectShadows=True)
     shape = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
     counter = CountLineTracker(line, CounterConfig(minimum_confidence=0.6, deadband_distance=3))
@@ -155,7 +178,7 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, shape)
         mask = cv2.dilate(mask, shape, iterations=2)
 
-        detections = detect(mask)
+        detections = detect(mask, profile.min_area)
         now = datetime.now(UTC)
         for track_id, point in tracker.update([c for c, _ in detections]):
             confidence = next((s for c, s in detections if c is point), 0.6)
@@ -168,7 +191,7 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
                 "count": counter.count - bucket_base,
                 "intervalSeconds": int(elapsed_bucket),
                 "streamQuality": round(health.visibility(), 4),
-                "modelVersion": MODEL_VERSION,
+                "modelVersion": profile.version,
             })
             bucket_base = counter.count
             bucket_started = now
@@ -184,7 +207,7 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
             "count": counter.count - bucket_base,
             "intervalSeconds": int(tail),
             "streamQuality": round(health.visibility(), 4),
-            "modelVersion": MODEL_VERSION,
+            "modelVersion": profile.version,
         })
 
     return {
@@ -195,7 +218,7 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
         "frozenSeconds": round(health.longest_frozen / fps, 2),
         "frames": health.frames,
         "elapsed": round(elapsed, 1),
-        "modelVersion": MODEL_VERSION,
+        "modelVersion": profile.version,
         "counts": samples,
     }
 

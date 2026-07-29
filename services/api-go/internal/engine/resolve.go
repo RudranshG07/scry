@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 )
@@ -10,8 +11,12 @@ import (
 const (
 	// Two of three observers must land on the same number for a result to stand.
 	minObservers = 2
-	// How far apart two counts can be and still count as agreement.
-	tolerance = 2
+	// Agreement is proportional: counters drift with traffic volume, so a fixed
+	// margin is far too tight at 200 vehicles and far too loose at 5. Five per
+	// cent matches the counting error the stream qualification gate accepts.
+	tolerancePercent = 0.05
+	// Below this, percentages are meaningless and a couple of vehicles is noise.
+	toleranceFloor = 2
 	// How long anyone has to challenge a proposed result.
 	challengeWindow = 10 * time.Minute
 )
@@ -59,7 +64,7 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 		return err
 	}
 
-	value, agreed := consensus(counts, tolerance, minObservers)
+	value, agreed := consensus(counts, minObservers)
 	if !agreed {
 		return e.invalidate(ctx, id, len(counts))
 	}
@@ -141,10 +146,16 @@ func (e *Engine) bands(ctx context.Context, id string) ([]band, error) {
 	return out, rows.Err()
 }
 
-// consensus finds the largest group of observers within tolerance of each other
-// and returns their median. Outliers are dropped rather than averaged in, so one
+// allowedSpread is how far apart two counts can be and still agree.
+func allowedSpread(base int64) int64 {
+	scaled := int64(math.Ceil(float64(base) * tolerancePercent))
+	return max(toleranceFloor, scaled)
+}
+
+// consensus finds the largest group of observers who agree with each other and
+// returns their median. Outliers are dropped rather than averaged in, so one
 // broken camera cannot drag the result.
-func consensus(counts []int64, tolerance int64, need int) (int64, bool) {
+func consensus(counts []int64, need int) (int64, bool) {
 	if len(counts) < need {
 		return 0, false
 	}
@@ -154,9 +165,10 @@ func consensus(counts []int64, tolerance int64, need int) (int64, bool) {
 
 	var best []int64
 	for i := range sorted {
+		spread := allowedSpread(sorted[i])
 		var group []int64
 		for _, v := range sorted[i:] {
-			if v-sorted[i] > tolerance {
+			if v-sorted[i] > spread {
 				break
 			}
 			group = append(group, v)

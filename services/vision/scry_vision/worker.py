@@ -52,7 +52,9 @@ def remaining(market: dict) -> float:
 def run(api: str, stream: str, camera: str, market_id: str | None, observer: str,
         role: str, cap: float, poll: float) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
-    from .observer import horizontal_line, observe, submit
+    from .observer import PROFILES, horizontal_line, observe, submit
+
+    profile = PROFILES[role]
 
     while True:
         try:
@@ -75,8 +77,9 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             time.sleep(poll)
             continue
 
-        print(f"observing {market['id']} on {stream} for {window:.0f}s", flush=True)
-        result = observe(camera, horizontal_line(), seconds=window)
+        print(f"observing {market['id']} on {stream} for {window:.0f}s "
+              f"as {role} ({profile.name})", flush=True)
+        result = observe(camera, horizontal_line(), seconds=window, profile=profile)
         print("  " + json.dumps({k: v for k, v in result.items() if k != "counts"}), flush=True)
 
         status, body = submit(api, market["id"], observer, role, result)

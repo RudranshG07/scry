@@ -35,6 +35,9 @@ func (e *Engine) schedule(ctx context.Context) error {
 		       COALESCE((s.qualification->>'threshold')::bigint, 180)
 		FROM streams s
 		WHERE s.status = 'Qualified'
+		  -- A stream with no playback source cannot be observed, so a market on
+		  -- it could only ever invalidate. Do not open one.
+		  AND s.public_playback_id IS NOT NULL
 		  AND NOT EXISTS (
 		      SELECT 1 FROM markets m
 		      WHERE m.stream_id = s.id

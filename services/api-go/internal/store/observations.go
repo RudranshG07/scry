@@ -39,6 +39,10 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (market_id, observer_id) DO UPDATE SET
 			observed_value = EXCLUDED.observed_value,
+			-- Provenance has to move with the value. A report claiming a model
+			-- that did not produce it is worse than no report at all.
+			role = EXCLUDED.role,
+			model_version = EXCLUDED.model_version,
 			confidence = EXCLUDED.confidence,
 			uptime = EXCLUDED.uptime,
 			maximum_timestamp_drift_ms = EXCLUDED.maximum_timestamp_drift_ms,
