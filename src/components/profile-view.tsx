@@ -6,7 +6,7 @@ import { FormEvent, useMemo, useRef, useState } from "react";
 import { useExperience } from "@/components/experience-provider";
 import { SiteHeader } from "@/components/site-header";
 import type { Category } from "@/lib/domain";
-import { categories, marketCatalog } from "@/lib/markets";
+import { categories, marketCategory, marketDirectory, outcomeLabel } from "@/lib/markets";
 
 export function ProfileView() {
   const { settings, updateSettings } = useExperience();
@@ -21,7 +21,7 @@ export function ProfileView() {
       ? forecasts.reduce((total, forecast) => total + forecast.confidence, 0) / forecasts.length
       : 0;
     const coveredCategories = new Set(
-      forecasts.map((forecast) => marketCatalog.find((market) => market.id === forecast.marketId)?.category).filter(Boolean),
+      forecasts.map((forecast) => marketCategory(forecast.marketId)).filter(Boolean),
     ).size;
     return {
       averageConfidence,
@@ -49,8 +49,8 @@ export function ProfileView() {
       <main className="mx-auto max-w-7xl px-4 py-8 md:px-6 lg:px-8">
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
           <div className="max-w-2xl">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ring"><Sparkles className="size-4" aria-hidden="true" />Forecast identity</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Build a record for being right for the right reasons.</h1>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Forecast identity</p>
+            <h1 className="mt-3 display text-4xl md:text-5xl">Build a record for being right for the right reasons.</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">Your preview identity and forecasts stay on this device. Calibration scoring begins after connected markets resolve.</p>
           </div>
           <div className="flex items-center gap-4 rounded-card border border-border bg-surface p-4">
@@ -106,10 +106,9 @@ export function ProfileView() {
             ) : (
               <div className="mt-4 grid gap-3">
                 {[...forecasts].reverse().map((forecast) => {
-                  const market = marketCatalog.find((item) => item.id === forecast.marketId);
-                  const outcome = market?.outcomes.find((item) => item.id === forecast.outcomeId);
-                  if (!market || !outcome) return null;
-                  return <article className="grid gap-3 rounded-control bg-surface-raised p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={forecast.marketId}><div><p className="text-xs font-semibold text-ring">{forecast.confidence}% · {outcome.label}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-1 text-xs text-muted-foreground">{market.city} · {market.category}</p></div><Link className="button-secondary" href={`/markets/${market.id}`}>Open market</Link></article>;
+                  const market = marketDirectory.get(forecast.marketId);
+                  if (!market) return null;
+                  return <article className="grid gap-3 rounded-control bg-surface-raised p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={forecast.marketId}><div><p className="text-xs font-semibold text-ring">{forecast.confidence}% · {outcomeLabel(market.id, forecast.outcomeId)}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-1 text-xs text-muted-foreground">{market.city} · {market.category}</p></div><Link className="button-secondary" href={`/markets/${market.id}`}>Open market</Link></article>;
                 })}
               </div>
             )}

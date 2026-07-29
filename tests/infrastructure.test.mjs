@@ -5,9 +5,12 @@ import test from "node:test";
 const compose = readFileSync(new URL("../compose.yaml", import.meta.url), "utf8");
 const nats = readFileSync(new URL("../infrastructure/nats.conf", import.meta.url), "utf8");
 
-test("local infrastructure binds data services only to loopback", () => {
-  const publishedPorts = compose.match(/127\.0\.0\.1:[^\n]+/g) ?? [];
-  assert.equal(publishedPorts.length, 4);
+test("local infrastructure binds every published port to loopback", () => {
+  const published = compose.match(/^\s+- .*:[0-9]+\s*$/gm) ?? [];
+  assert.ok(published.length > 0, "compose should publish at least one port");
+  for (const entry of published) {
+    assert.match(entry, /- 127\.0\.0\.1:/, `${entry.trim()} is not bound to loopback`);
+  }
   assert.doesNotMatch(compose, /\n\s+- [0-9]+:[0-9]+/);
 });
 

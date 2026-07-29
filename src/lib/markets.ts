@@ -1,6 +1,6 @@
-import type { Category, Market } from "@/lib/domain";
+import type { Category } from "./domain.ts";
 
-export type { Category, Market, MarketOutcome, MarketStatus } from "@/lib/domain";
+export type { Category, Market, MarketOutcome, MarketStatus } from "./domain.ts";
 
 export const categories: Array<"All" | Category> = [
   "All",
@@ -10,29 +10,60 @@ export const categories: Array<"All" | Category> = [
   "Operations",
 ];
 
-export const markets: Market[] = [
+export type MarketSeed = {
+  id: string;
+  streamId: string;
+  category: Category;
+  location: string;
+  city: string;
+  question: string;
+  unit: string;
+  threshold: number;
+  cycleMinutes: number;
+  offsetMinutes: number;
+  openMinutes: number;
+  observeMinutes: number;
+  baseline: number;
+  rateBias: number;
+  prior: number;
+  poolSeed: number;
+  observers: number;
+  streamSources?: Array<{ url: string; name: string; timeZone: string }>;
+  clip?: { url: string; poster: string; name: string };
+  archived?: boolean;
+  invalid?: boolean;
+  outcomes: [{ id: string; label: string }, { id: string; label: string }];
+};
+
+export const marketSeeds: MarketSeed[] = [
   {
-    id: "indore-gate-a",
-    streamId: "stream-indore-gate-a",
+    id: "long-beach-710",
+    streamId: "stream-long-beach-710",
     category: "Traffic",
-    location: "Campus Gate A",
-    city: "Indore",
-    question: "Will more than 180 vehicles enter by 19:30?",
-    status: "Open",
-    countdown: "04:18",
-    pool: 8420,
-    forecast: 62,
-    currentRate: 17.4,
-    baseline: 15.8,
+    location: "I-5 at 28th Street",
+    city: "San Diego",
+    question: "Will more than 180 vehicles cross the count line during the observation window?",
+    unit: "vehicles",
+    threshold: 180,
+    cycleMinutes: 60,
+    offsetMinutes: 0,
+    openMinutes: 8,
+    observeMinutes: 15,
+    baseline: 10.9,
+    rateBias: 1.1,
+    prior: 62,
+    poolSeed: 8420,
     observers: 3,
-    opensAt: "2026-07-20T13:30:00.000Z",
-    locksAt: "2026-07-20T13:35:00.000Z",
-    observationEndsAt: "2026-07-20T14:00:00.000Z",
-    outcomes: [
-      { id: "yes", label: "Yes, above 180", probability: 64, returnRate: 1.56 },
-      { id: "no", label: "No, 180 or below", probability: 36, returnRate: 2.78 },
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
+    streamSources: [
+      { url: "https://wzmedia.dot.ca.gov/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8", name: "C23 · SB I-5 at 28th St, San Diego", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8", name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D7/CCTV-262.stream/playlist.m3u8", name: "CAM 262 · N710 s/o PCH, Long Beach", timeZone: "America/Los_Angeles" },
     ],
-    trend: [43, 46, 45, 49, 52, 51, 56, 58, 57, 61, 64],
+    outcomes: [
+      { id: "yes", label: "Yes, above 180" },
+      { id: "no", label: "No, 180 or below" },
+    ],
   },
   {
     id: "pune-ev-lot",
@@ -40,22 +71,23 @@ export const markets: Market[] = [
     category: "Parking",
     location: "Riverside EV Lot",
     city: "Pune",
-    question: "Will occupancy exceed 85% in the next 30 minutes?",
-    status: "Open",
-    countdown: "11:42",
-    pool: 5135,
-    forecast: 48,
-    currentRate: 4.2,
-    baseline: 3.7,
+    question: "Will more than 68 vehicles claim a charging bay this window?",
+    unit: "arrivals",
+    threshold: 68,
+    cycleMinutes: 60,
+    offsetMinutes: 14,
+    openMinutes: 10,
+    observeMinutes: 20,
+    baseline: 3.47,
+    rateBias: 0.98,
+    prior: 48,
+    poolSeed: 5135,
     observers: 3,
-    opensAt: "2026-07-20T13:35:00.000Z",
-    locksAt: "2026-07-20T13:55:00.000Z",
-    observationEndsAt: "2026-07-20T14:25:00.000Z",
+    clip: { url: "/streams/parking.mp4", poster: "/streams/parking.webp", name: "Reference footage · surface lot" },
     outcomes: [
-      { id: "yes", label: "Yes, above 85%", probability: 45, returnRate: 2.22 },
-      { id: "no", label: "No, 85% or below", probability: 55, returnRate: 1.82 },
+      { id: "yes", label: "Yes, above 68" },
+      { id: "no", label: "No, 68 or below" },
     ],
-    trend: [52, 50, 48, 51, 49, 47, 46, 44, 46, 45, 45],
   },
   {
     id: "bengaluru-food-hall",
@@ -63,22 +95,23 @@ export const markets: Market[] = [
     category: "Queues",
     location: "Orion Food Hall",
     city: "Bengaluru",
-    question: "Will the service queue exceed 25 people at 20:00?",
-    status: "Observing",
-    countdown: "06:09",
-    pool: 12680,
-    forecast: 73,
-    currentRate: 3.8,
-    baseline: 2.9,
-    observers: 2,
-    opensAt: "2026-07-20T13:10:00.000Z",
-    locksAt: "2026-07-20T13:20:00.000Z",
-    observationEndsAt: "2026-07-20T14:30:00.000Z",
+    question: "Will the service queue take more than 25 people this window?",
+    unit: "people",
+    threshold: 25,
+    cycleMinutes: 45,
+    offsetMinutes: 7,
+    openMinutes: 6,
+    observeMinutes: 12,
+    baseline: 1.77,
+    rateBias: 1.18,
+    prior: 73,
+    poolSeed: 12680,
+    observers: 3,
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
     outcomes: [
-      { id: "yes", label: "Yes, above 25", probability: 76, returnRate: 1.32 },
-      { id: "no", label: "No, 25 or below", probability: 24, returnRate: 4.17 },
+      { id: "yes", label: "Yes, above 25" },
+      { id: "no", label: "No, 25 or below" },
     ],
-    trend: [61, 63, 66, 64, 68, 69, 72, 70, 73, 75, 76],
   },
   {
     id: "mumbai-sort-lane",
@@ -86,51 +119,52 @@ export const markets: Market[] = [
     category: "Operations",
     location: "Sort Lane 04",
     city: "Navi Mumbai",
-    question: "Will throughput stay above 420 packages this hour?",
-    status: "Scheduled",
-    countdown: "28:00",
-    pool: 2400,
-    forecast: 57,
-    currentRate: 7.6,
-    baseline: 7.1,
+    question: "Will throughput stay above 420 packages this window?",
+    unit: "packages",
+    threshold: 420,
+    cycleMinutes: 90,
+    offsetMinutes: 31,
+    openMinutes: 12,
+    observeMinutes: 30,
+    baseline: 13.7,
+    rateBias: 1.02,
+    prior: 57,
+    poolSeed: 2400,
     observers: 3,
-    opensAt: "2026-07-20T14:10:00.000Z",
-    locksAt: "2026-07-20T14:25:00.000Z",
-    observationEndsAt: "2026-07-20T15:25:00.000Z",
+    clip: { url: "/streams/parking.mp4", poster: "/streams/parking.webp", name: "Reference footage · surface lot" },
     outcomes: [
-      { id: "yes", label: "Yes, 420 or above", probability: 59, returnRate: 1.69 },
-      { id: "no", label: "No, below 420", probability: 41, returnRate: 2.44 },
+      { id: "yes", label: "Yes, 420 or above" },
+      { id: "no", label: "No, below 420" },
     ],
-    trend: [48, 50, 49, 53, 51, 52, 55, 56, 54, 57, 59],
   },
-];
-
-export const historicalMarkets: Market[] = [
   {
-    id: "delhi-arrival-lane",
-    streamId: "stream-delhi-arrival-lane",
+    id: "los-angeles-405",
+    streamId: "stream-los-angeles-405",
     category: "Traffic",
-    location: "Terminal 2 Arrival Lane",
-    city: "Delhi",
-    question: "Did arrivals exceed 240 vehicles from 17:30–17:45?",
-    status: "Resolved",
-    countdown: "00:00",
-    pool: 9340,
-    forecast: 68,
-    currentRate: 16.7,
-    baseline: 14.9,
+    location: "I-8 at Taylor Street",
+    city: "San Diego",
+    question: "Will eastbound crossings exceed 240 vehicles this window?",
+    unit: "vehicles",
+    threshold: 240,
+    cycleMinutes: 60,
+    offsetMinutes: 38,
+    openMinutes: 9,
+    observeMinutes: 16,
+    baseline: 14.3,
+    rateBias: 1.05,
+    prior: 68,
+    poolSeed: 9340,
     observers: 3,
-    opensAt: "2026-07-20T11:45:00.000Z",
-    locksAt: "2026-07-20T12:00:00.000Z",
-    observationEndsAt: "2026-07-20T12:15:00.000Z",
-    resolvedAt: "2026-07-20T12:23:00.000Z",
-    observedValue: 257,
-    winningOutcomeId: "yes",
-    outcomes: [
-      { id: "yes", label: "Yes, above 240", probability: 71, returnRate: 1.41 },
-      { id: "no", label: "No, 240 or below", probability: 29, returnRate: 3.45 },
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
+    streamSources: [
+      { url: "https://wzmedia.dot.ca.gov/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8", name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8", name: "C23 · SB I-5 at 28th St, San Diego", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8", name: "C57 · WB I-8 at I-15, San Diego", timeZone: "America/Los_Angeles" },
     ],
-    trend: [49, 51, 54, 58, 57, 61, 63, 66, 65, 69, 71],
+    outcomes: [
+      { id: "yes", label: "Yes, above 240" },
+      { id: "no", label: "No, 240 or below" },
+    ],
   },
   {
     id: "hyderabad-west-lot",
@@ -138,32 +172,203 @@ export const historicalMarkets: Market[] = [
     category: "Parking",
     location: "West Campus Lot",
     city: "Hyderabad",
-    question: "Did occupancy exceed 90% before 18:00?",
-    status: "Invalid",
-    countdown: "00:00",
-    pool: 4120,
-    forecast: 52,
-    currentRate: 2.1,
-    baseline: 3.4,
-    observers: 1,
-    opensAt: "2026-07-20T11:00:00.000Z",
-    locksAt: "2026-07-20T11:30:00.000Z",
-    observationEndsAt: "2026-07-20T12:30:00.000Z",
-    resolvedAt: "2026-07-20T12:34:00.000Z",
+    question: "Will more than 90 vehicles enter the west lot this window?",
+    unit: "arrivals",
+    threshold: 90,
+    cycleMinutes: 75,
+    offsetMinutes: 22,
+    openMinutes: 10,
+    observeMinutes: 22,
+    baseline: 4.35,
+    rateBias: 0.94,
+    prior: 52,
+    poolSeed: 4120,
+    observers: 3,
+    clip: { url: "/streams/parking.mp4", poster: "/streams/parking.webp", name: "Reference footage · surface lot" },
     outcomes: [
-      { id: "yes", label: "Yes, above 90%", probability: 54, returnRate: 1.85 },
-      { id: "no", label: "No, 90% or below", probability: 46, returnRate: 2.17 },
+      { id: "yes", label: "Yes, above 90" },
+      { id: "no", label: "No, 90 or below" },
     ],
-    trend: [47, 49, 51, 55, 53, 54, 56, 55, 54, 54, 54],
+  },
+  {
+    id: "chennai-gate-c",
+    streamId: "stream-chennai-gate-c",
+    category: "Queues",
+    location: "Ticketing Gate C",
+    city: "Chennai",
+    question: "Will more than 34 people clear ticketing this window?",
+    unit: "people",
+    threshold: 34,
+    cycleMinutes: 50,
+    offsetMinutes: 44,
+    openMinutes: 7,
+    observeMinutes: 14,
+    baseline: 2.17,
+    rateBias: 1.12,
+    prior: 44,
+    poolSeed: 6210,
+    observers: 3,
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
+    outcomes: [
+      { id: "yes", label: "Yes, above 34" },
+      { id: "no", label: "No, 34 or below" },
+    ],
+  },
+  {
+    id: "ahmedabad-dock",
+    streamId: "stream-ahmedabad-dock",
+    category: "Operations",
+    location: "Dock Bay 07",
+    city: "Ahmedabad",
+    question: "Will more than 96 pallets clear dock bay 07 this window?",
+    unit: "pallets",
+    threshold: 96,
+    cycleMinutes: 70,
+    offsetMinutes: 12,
+    openMinutes: 11,
+    observeMinutes: 24,
+    baseline: 3.77,
+    rateBias: 1.06,
+    prior: 61,
+    poolSeed: 3480,
+    observers: 3,
+    clip: { url: "/streams/parking.mp4", poster: "/streams/parking.webp", name: "Reference footage · surface lot" },
+    outcomes: [
+      { id: "yes", label: "Yes, above 96" },
+      { id: "no", label: "No, 96 or below" },
+    ],
+  },
+  {
+    id: "santa-monica-10",
+    streamId: "stream-santa-monica-10",
+    category: "Traffic",
+    location: "I-8 at Interstate 15",
+    city: "San Diego",
+    question: "Did westbound crossings exceed 300 vehicles?",
+    unit: "vehicles",
+    threshold: 300,
+    cycleMinutes: 60,
+    offsetMinutes: 5,
+    openMinutes: 9,
+    observeMinutes: 18,
+    baseline: 16.0,
+    rateBias: 1.04,
+    prior: 66,
+    poolSeed: 7480,
+    observers: 3,
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
+    streamSources: [
+      { url: "https://wzmedia.dot.ca.gov/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8", name: "C57 · WB I-8 at I-15, San Diego", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D7/CCTV-262.stream/playlist.m3u8", name: "CAM 262 · N710 s/o PCH, Long Beach", timeZone: "America/Los_Angeles" },
+      { url: "https://wzmedia.dot.ca.gov/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8", name: "C23 · SB I-5 at 28th St, San Diego", timeZone: "America/Los_Angeles" },
+    ],
+    archived: true,
+    outcomes: [
+      { id: "yes", label: "Yes, above 300" },
+      { id: "no", label: "No, 300 or below" },
+    ],
+  },
+  {
+    id: "kolkata-metro-gate",
+    streamId: "stream-kolkata-metro-gate",
+    category: "Queues",
+    location: "Metro Gate B",
+    city: "Kolkata",
+    question: "Did gate B clear more than 140 passengers?",
+    unit: "passengers",
+    threshold: 140,
+    cycleMinutes: 60,
+    offsetMinutes: 27,
+    openMinutes: 8,
+    observeMinutes: 20,
+    baseline: 7.22,
+    rateBias: 0.97,
+    prior: 54,
+    poolSeed: 4120,
+    observers: 1,
+    clip: { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" },
+    archived: true,
+    invalid: true,
+    outcomes: [
+      { id: "yes", label: "Yes, above 140" },
+      { id: "no", label: "No, 140 or below" },
+    ],
   },
 ];
 
-export const marketCatalog = [...markets, ...historicalMarkets];
+export const marketDirectory = new Map(
+  marketSeeds.map((seed) => [
+    seed.id,
+    {
+      id: seed.id,
+      streamId: seed.streamId,
+      category: seed.category,
+      city: seed.city,
+      location: seed.location,
+      question: seed.question,
+      unit: seed.unit,
+      threshold: seed.threshold,
+      streamSources: seed.streamSources,
+      clip: seed.clip,
+    },
+  ]),
+);
 
-export function formatUsd(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
+export function marketStreamSources(id: string) {
+  return marketDirectory.get(id)?.streamSources ?? [];
+}
+
+export function marketLabel(id: string) {
+  const entry = marketDirectory.get(id);
+  return entry ? `${entry.city} · ${entry.location}` : id;
+}
+
+export function marketQuestion(id: string) {
+  return marketDirectory.get(id)?.question ?? "Market";
+}
+
+export function marketUnit(id: string) {
+  return marketDirectory.get(id)?.unit ?? "events";
+}
+
+export function marketCategory(id: string) {
+  return marketDirectory.get(id)?.category;
+}
+
+export function outcomeLabel(marketId: string, outcomeId: string) {
+  const seed = marketSeeds.find((item) => item.id === marketId);
+  return seed?.outcomes.find((outcome) => outcome.id === outcomeId)?.label ?? outcomeId;
+}
+
+export function marketClip(id: string) {
+  return marketDirectory.get(id)?.clip;
+}
+
+// Cameras belong to a stream, not to a market: a stream outlives the markets
+// scheduled on it. Keyed by stream id so the API's streamId resolves directly.
+const CALTRANS = "https://wzmedia.dot.ca.gov";
+const PACIFIC = "America/Los_Angeles";
+
+export const streamSourcePool: Record<string, Array<{ url: string; name: string; timeZone: string }>> = {
+  "stream-sd-5-28th": [
+    { url: `${CALTRANS}/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8`, name: "C23 · SB I-5 at 28th St, San Diego", timeZone: PACIFIC },
+    { url: `${CALTRANS}/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8`, name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: PACIFIC },
+  ],
+  "stream-sd-8-taylor": [
+    { url: `${CALTRANS}/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8`, name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: PACIFIC },
+    { url: `${CALTRANS}/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8`, name: "C57 · WB I-8 at I-15, San Diego", timeZone: PACIFIC },
+  ],
+  "stream-sd-8-15": [
+    { url: `${CALTRANS}/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8`, name: "C57 · WB I-8 at I-15, San Diego", timeZone: PACIFIC },
+    { url: `${CALTRANS}/D7/CCTV-262.stream/playlist.m3u8`, name: "CAM 262 · N710 s/o PCH, Long Beach", timeZone: PACIFIC },
+  ],
+};
+
+export function sourcesFor(id: string) {
+  return streamSourcePool[id] ?? marketDirectory.get(id)?.streamSources ?? [];
+}
+
+export function clipFor(id: string) {
+  if (marketDirectory.has(id)) return marketDirectory.get(id)?.clip;
+  return { url: "/streams/crossing.mp4", poster: "/streams/crossing.webp", name: "Reference footage · signalled crossing" };
 }

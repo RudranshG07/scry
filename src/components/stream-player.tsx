@@ -1,86 +1,77 @@
 "use client";
 
 import { CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { resolveStreamPlayback } from "@/lib/media";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import type { ResolvedStream } from "@/app/api/streams/[marketId]/route";
 
-type PlaybackState = "loading" | "ready" | "error";
+type PlaybackState = "resolving" | "loading" | "ready" | "error";
+
+export type StreamSource = { url: string; name: string };
+
+const maximumRetries = 3;
 
 export function StreamPlayer({
-  streamId,
+  marketId,
   label,
   fallback,
+  onSourceChange,
 }: {
-  streamId: string;
+  marketId: string;
   label: string;
   fallback: ReactNode;
+  onSourceChange?: (source: ResolvedStream | null) => void;
 }) {
-  const playback = useMemo(() => resolveStreamPlayback(streamId), [streamId]);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<PlaybackState>("loading");
+  const [state, setState] = useState<PlaybackState>("resolving");
+  const [stream, setStream] = useState<ResolvedStream | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const retries = useRef(0);
 
   useEffect(() => {
-    if (playback.kind === "fallback") return;
+    onSourceChange?.(stream);
+  }, [stream, onSourceChange]);
 
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    void fetch(`/api/streams/${encodeURIComponent(marketId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("resolve failed"))))
+      .then((resolved: ResolvedStream) => {
+        if (!active) return;
+        setStream(resolved);
+        setState("loading");
+      })
+      .catch(() => {
+        if (active) setState("error");
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [marketId, attempt]);
+
+  const retry = useCallback(() => {
+    if (retries.current >= maximumRetries) {
+      setState("error");
+      return;
+    }
+    retries.current += 1;
+    setState("resolving");
+    setAttempt((value) => value + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!stream) return;
     const video = videoRef.current;
     if (!video) return;
 
-    if (playback.kind === "livekit") {
-      let disposed = false;
-      let room: { disconnect: () => void } | null = null;
-      const controller = new AbortController();
-
-      void Promise.all([
-        import("livekit-client"),
-        fetch(playback.tokenEndpoint, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { Accept: "application/json" },
-          signal: controller.signal,
-        }),
-      ])
-        .then(async ([{ Room, RoomEvent }, response]) => {
-          if (!response.ok) throw new Error("Playback authorization failed.");
-          const payload = await response.json() as { token?: unknown };
-          if (typeof payload.token !== "string" || !payload.token) throw new Error("Playback authorization is invalid.");
-          if (disposed) return;
-
-          const nextRoom = new Room({ adaptiveStream: true, dynacast: true });
-          room = nextRoom;
-          nextRoom.on(RoomEvent.TrackSubscribed, (track) => {
-            if (track.kind === "video" && videoRef.current) {
-              track.attach(videoRef.current);
-              setState("ready");
-            }
-          });
-          nextRoom.on(RoomEvent.Disconnected, () => {
-            if (!disposed) setState("error");
-          });
-          await nextRoom.connect(playback.url, payload.token, { autoSubscribe: true });
-          for (const participant of nextRoom.remoteParticipants.values()) {
-            for (const publication of participant.videoTrackPublications.values()) {
-              if (publication.track && videoRef.current) {
-                publication.track.attach(videoRef.current);
-                setState("ready");
-                return;
-              }
-            }
-          }
-        })
-        .catch((error: unknown) => {
-          if (!disposed && !(error instanceof DOMException && error.name === "AbortError")) setState("error");
-        });
-
-      return () => {
-        disposed = true;
-        controller.abort();
-        room?.disconnect();
-      };
-    }
-
-    if (playback.kind === "video" || video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = playback.url;
+    if (stream.kind === "video" || video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = stream.url;
       return () => {
         video.removeAttribute("src");
         video.load();
@@ -98,16 +89,12 @@ export function StreamPlayer({
           return;
         }
 
-        const hls = new Hls({
-          backBufferLength: 30,
-          enableWorker: true,
-          lowLatencyMode: true,
-        });
+        const hls = new Hls({ backBufferLength: 30, enableWorker: true, lowLatencyMode: true });
         player = hls;
-        hls.loadSource(playback.url);
+        hls.loadSource(stream.url);
         hls.attachMedia(video);
         hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) setState("error");
+          if (data.fatal) retry();
         });
       })
       .catch(() => {
@@ -118,45 +105,50 @@ export function StreamPlayer({
       disposed = true;
       player?.destroy();
     };
-  }, [attempt, playback]);
-
-  if (playback.kind === "fallback") return fallback;
+  }, [stream, retry]);
 
   return (
     <div className="absolute inset-0">
       {fallback}
       <video
         ref={videoRef}
-        className={`absolute inset-0 size-full object-cover transition-opacity duration-300 ${state === "ready" ? "opacity-100" : "opacity-0"}`}
+        className={`absolute inset-0 size-full object-cover transition-opacity duration-500 ${state === "ready" ? "opacity-100" : "opacity-0"}`}
         aria-label={`Processed live stream of ${label}`}
+        poster={stream?.poster}
         autoPlay
         muted
+        loop={stream?.kind === "video"}
         playsInline
         preload="metadata"
         onCanPlay={() => setState("ready")}
         onPlaying={() => setState("ready")}
-        onError={() => setState("error")}
+        onError={retry}
       />
-      {state === "loading" && (
-        <div className="absolute right-4 top-4 flex items-center gap-2 rounded-control bg-background/80 px-3 py-2 text-xs font-semibold backdrop-blur-md" role="status">
-          <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden="true" />
-          Loading processed feed
+
+      {(state === "resolving" || state === "loading") && (
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 backdrop-blur-sm" role="status">
+          <LoaderCircle className="size-4 animate-spin text-white/70" aria-hidden="true" />
+          <span className="text-xs text-white/70">
+            {state === "resolving" ? "Selecting a live source" : "Connecting"}
+          </span>
         </div>
       )}
+
       {state === "error" && (
         <div className="absolute right-4 top-4 max-w-72 rounded-control border border-border bg-background/90 p-3 backdrop-blur-md" role="status">
           <div className="flex items-start gap-2">
             <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
             <div>
               <p className="text-xs font-semibold">Sensor view active</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">The processed video feed is temporarily unavailable.</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">No qualified source is reachable right now.</p>
             </div>
           </div>
           <button
             className="focus-ring mt-2 inline-flex min-h-10 items-center gap-2 rounded-control px-2 text-xs font-semibold text-foreground hover:bg-surface-soft"
             type="button"
             onClick={() => {
-              setState("loading");
+              retries.current = 0;
+              setState("resolving");
               setAttempt((value) => value + 1);
             }}
           >

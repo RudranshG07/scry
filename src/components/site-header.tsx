@@ -3,6 +3,7 @@
 import { Bell, CalendarDays, Eye, LoaderCircle, Radio, Settings, Trophy, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CommandPalette } from "@/components/command-palette";
 import { useWallet } from "@/components/wallet-provider";
 
 function walletLabel(status: ReturnType<typeof useWallet>["status"], address: `0x${string}` | null) {
@@ -59,6 +60,7 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <CommandPalette />
             <span className="hidden min-h-10 items-center gap-2 rounded-control border border-border bg-surface px-3 text-xs font-medium text-muted-foreground xl:flex">
               <span className="size-1.5 rounded-full bg-accent" />
               Base · Forecast only

@@ -1,53 +1,18 @@
-import type { CreateRoomMessage, LeaderboardEntry, Portfolio, ProofOfObservation, RoomMessage, ScryNotification } from "@/lib/domain";
-import { marketCatalog, markets } from "@/lib/markets";
+import type {
+  CreateRoomMessage,
+  LeaderboardEntry,
+  Market,
+  MarketStatus,
+  Portfolio,
+  Position,
+  ProofOfObservation,
+  RoomMessage,
+  ScryNotification,
+} from "@/lib/domain";
+import { marketSeeds, marketUnit } from "@/lib/markets";
+import { findMarketAt, listMarketsAt, liveCountFor, proofFor } from "@/lib/simulation";
+import { marketPhase } from "@/lib/time";
 import type { MarketQuery, MarketSubscription, ScryApi } from "@/lib/api/contract";
-
-const proofs: Record<string, ProofOfObservation> = Object.fromEntries(
-  marketCatalog.map((market) => [
-    market.id,
-    {
-      marketId: market.id,
-      streamId: market.streamId,
-      status: market.status === "Observing" ? "Collecting" : market.status === "Resolved" ? "Final" : market.status === "Invalid" ? "Invalid" : "Proposed",
-      observedValue: market.observedValue ?? (market.status === "Observing" ? null : 126),
-      winningOutcomeId: market.winningOutcomeId ?? null,
-      ruleHash: "0x6a91e14b7c332c1b8040f0bc9705dccb79d6a0ed8e40d02fd7db81cce8a5f07c",
-      evidenceRoot: "0x4cf7512be0803e417ee357f858761adb49fbcc1a8b43a6e77c63ac0c08ce18a2",
-      observationWindow: {
-        opensAt: "2026-07-20T13:50:00.000Z",
-        closesAt: "2026-07-20T14:00:00.000Z",
-      },
-      minimumUptime: 99,
-      measuredUptime: 99.84,
-      challengeEndsAt: "2026-07-20T14:10:00.000Z",
-      observers: [
-        {
-          id: "observer-edge-01",
-          name: "Edge log",
-          role: "Edge",
-          state: "Signed",
-          modelVersion: "edge-agent/1.4.2",
-          signature: "0x9f6c3a991ed6e429c8292e26bf93ae9187e8568f4ffb24b1a79d3a8f8d99072a",
-        },
-        {
-          id: "observer-vision-01",
-          name: "Vision primary",
-          role: "Primary vision",
-          state: "Signed",
-          modelVersion: "counter/3.8.0",
-          signature: "0x45a1c4a0a5d1e0f4041b64d1cb38d37d24f7a6bb4d9db4f50dc9ff043fd67f40",
-        },
-        {
-          id: "observer-verify-01",
-          name: "Independent verifier",
-          role: "Independent verification",
-          state: market.observers === 3 ? "Healthy" : "Reconnecting",
-          modelVersion: "verifier/2.1.0",
-        },
-      ],
-    },
-  ]),
-);
 
 const leaderboard: LeaderboardEntry[] = [
   { rank: 1, id: "signal-fox", displayName: "Signal Fox", kind: "Human", specialty: "Traffic", forecasts: 284, brierScore: 0.116, calibration: 94 },
@@ -55,57 +20,160 @@ const leaderboard: LeaderboardEntry[] = [
   { rank: 3, id: "queue-theory", displayName: "Queue Theory", kind: "Human", specialty: "Queues", forecasts: 198, brierScore: 0.131, calibration: 91 },
   { rank: 4, id: "park-sense", displayName: "Park Sense", kind: "Agent", specialty: "Parking", forecasts: 641, brierScore: 0.138, calibration: 89 },
   { rank: 5, id: "monsoon-line", displayName: "Monsoon Line", kind: "Human", specialty: "Traffic", forecasts: 156, brierScore: 0.144, calibration: 87 },
+  { rank: 6, id: "gate-oracle", displayName: "Gate Oracle", kind: "Agent", specialty: "Traffic", forecasts: 1204, brierScore: 0.149, calibration: 86 },
+  { rank: 7, id: "dock-watch", displayName: "Dock Watch", kind: "Human", specialty: "Operations", forecasts: 143, brierScore: 0.157, calibration: 84 },
 ];
 
-const roomMessages: Record<string, RoomMessage[]> = Object.fromEntries(
-  marketCatalog.map((market, index) => [
-    market.id,
-    [
-      {
-        id: `${market.id}-system`,
-        marketId: market.id,
-        author: "Scry observer",
-        kind: "System",
-        body: market.status === "Invalid" ? "The observation did not meet the published uptime rule." : "Stream health and observer clocks are within the published rule.",
-        createdAt: `2026-07-20T13:${String(32 + index).padStart(2, "0")}:00.000Z`,
-      },
-      {
-        id: `${market.id}-agent`,
-        marketId: market.id,
-        author: "Atlas Flow",
-        kind: "Agent",
-        body: market.forecast > 60 ? "Recent rate acceleration keeps the upper outcome favored." : "The current rate is close to baseline, so uncertainty remains high.",
-        createdAt: `2026-07-20T13:${String(34 + index).padStart(2, "0")}:00.000Z`,
-      },
-    ],
-  ]),
-);
+const postedMessages = new Map<string, RoomMessage[]>();
 
-const notifications: ScryNotification[] = [
-  {
-    id: "observer-quorum-indore",
-    kind: "Observer",
-    title: "Observer quorum healthy",
-    body: "All three observation paths are online for Campus Gate A.",
-    marketId: "indore-gate-a",
-    createdAt: "2026-07-20T13:46:00.000Z",
-  },
-  {
-    id: "market-observing-bengaluru",
-    kind: "Market",
-    title: "Observation started",
-    body: "The Orion Food Hall market is now counting its final window.",
-    marketId: "bengaluru-food-hall",
-    createdAt: "2026-07-20T13:41:00.000Z",
-  },
-  {
+function seededMessages(market: Market): RoomMessage[] {
+  const phase = marketPhase(market, Date.now());
+  const opensAt = new Date(market.opensAt).getTime();
+  const leader = market.outcomes[0];
+
+  const entries: RoomMessage[] = [
+    {
+      id: `${market.id}-system`,
+      marketId: market.id,
+      author: "Scry observer",
+      kind: "System",
+      body:
+        market.observers < 3
+          ? "The independent verifier is offline. Resolution will invalidate if quorum is not restored."
+          : "Stream health and observer clocks are inside the published rule.",
+      createdAt: new Date(opensAt + 30_000).toISOString(),
+    },
+    {
+      id: `${market.id}-agent`,
+      marketId: market.id,
+      author: "Atlas Flow",
+      kind: "Agent",
+      body:
+        leader.probability > 60
+          ? `Rate is running above baseline, so ${leader.label.toLowerCase()} stays favoured.`
+          : "Current rate sits close to baseline. Uncertainty is still wide.",
+      createdAt: new Date(opensAt + 90_000).toISOString(),
+    },
+  ];
+
+  if (phase.status === "Observing") {
+    entries.push({
+      id: `${market.id}-observing`,
+      marketId: market.id,
+      author: "Scry observer",
+      kind: "System",
+      body: `Observation window is open. Counts are being recorded against the published count line.`,
+      createdAt: new Date(new Date(market.locksAt).getTime() + 30_000).toISOString(),
+    });
+  }
+
+  if (phase.isPending || phase.status === "Resolved") {
+    entries.push({
+      id: `${market.id}-proposed`,
+      marketId: market.id,
+      author: "Scry observer",
+      kind: "System",
+      body: `Result proposed at ${market.observedValue ?? 0} ${marketUnit(market.id)}. The challenge window is open.`,
+      createdAt: market.observationEndsAt,
+    });
+  }
+
+  return entries;
+}
+
+function buildNotifications(now: number): ScryNotification[] {
+  const notifications: ScryNotification[] = [];
+
+  for (const market of listMarketsAt(now)) {
+    const phase = marketPhase(market, now);
+    if (phase.status === "Observing") {
+      notifications.push({
+        id: `observing-${market.id}-${market.locksAt}`,
+        kind: "Market",
+        title: "Observation started",
+        body: `${market.city} · ${market.location} is counting its final window.`,
+        marketId: market.id,
+        createdAt: market.locksAt,
+      });
+    }
+    if (phase.isPending) {
+      notifications.push({
+        id: `proposed-${market.id}-${market.observationEndsAt}`,
+        kind: "Market",
+        title: "Result proposed",
+        body: `${market.question} resolved at ${market.observedValue ?? 0} ${marketUnit(market.id)}.`,
+        marketId: market.id,
+        createdAt: market.observationEndsAt,
+      });
+    }
+    if (market.observers < 3) {
+      notifications.push({
+        id: `quorum-${market.id}-${market.locksAt}`,
+        kind: "Observer",
+        title: "Observer quorum degraded",
+        body: `Only ${market.observers} of 3 observers are reporting for ${market.location}.`,
+        marketId: market.id,
+        createdAt: market.locksAt,
+      });
+    }
+  }
+
+  notifications.push({
     id: "account-preview",
     kind: "Account",
     title: "Forecast preview active",
-    body: "Free forecasts and reminders are stored on this device.",
-    createdAt: "2026-07-20T13:30:00.000Z",
-  },
-];
+    body: "Free forecasts and reminders are stored on this device only.",
+    createdAt: new Date(now - 30 * 60_000).toISOString(),
+  });
+
+  return notifications
+    .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
+    .slice(0, 12);
+}
+
+function positionState(market: Market, outcomeId: string): Position["state"] {
+  if (market.status === "Invalid") return "Refundable";
+  if (market.status === "Resolved") return market.winningOutcomeId === outcomeId ? "Claimable" : "Claimed";
+  return "Open";
+}
+
+function buildPortfolio(address: `0x${string}`, now: number): Portfolio {
+  const holdings = [
+    { marketId: "long-beach-710", outcomeIndex: 0, amount: 25 },
+    { marketId: "pune-ev-lot", outcomeIndex: 1, amount: 65 },
+    { marketId: "santa-monica-10", outcomeIndex: 0, amount: 40 },
+    { marketId: "kolkata-metro-gate", outcomeIndex: 1, amount: 30 },
+  ];
+
+  const positions: Position[] = [];
+  for (const holding of holdings) {
+    const market = findMarketAt(holding.marketId, now);
+    if (!market) continue;
+    const outcome = market.outcomes[holding.outcomeIndex];
+    positions.push({
+      id: `position-${holding.marketId}`,
+      marketId: market.id,
+      question: market.question,
+      outcomeLabel: outcome.label,
+      amount: holding.amount,
+      estimatedReturn: Number((holding.amount * outcome.returnRate).toFixed(2)),
+      state: positionState(market, outcome.id),
+      createdAt: market.opensAt,
+    });
+  }
+
+  const claimable = positions
+    .filter((position) => position.state === "Claimable" || position.state === "Refundable")
+    .reduce((total, position) => total + (position.state === "Refundable" ? position.amount : position.estimatedReturn), 0);
+
+  return {
+    address,
+    balance: 428.75,
+    totalPositioned: positions.reduce((total, position) => total + position.amount, 0),
+    claimable: Number(claimable.toFixed(2)),
+    positions,
+  };
+}
 
 function wait(duration = 180) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, duration));
@@ -114,7 +182,7 @@ function wait(duration = 180) {
 export class MockScryApi implements ScryApi {
   async listMarkets(query: MarketQuery = {}) {
     if (typeof window !== "undefined") await wait();
-    return marketCatalog.filter(
+    return listMarketsAt(Date.now()).filter(
       (market) =>
         (!query.category || market.category === query.category) &&
         (!query.status || market.status === query.status),
@@ -123,45 +191,19 @@ export class MockScryApi implements ScryApi {
 
   async getMarket(id: string) {
     if (typeof window !== "undefined") await wait(120);
-    return marketCatalog.find((market) => market.id === id) ?? null;
+    return findMarketAt(id, Date.now());
   }
 
-  async getProof(marketId: string) {
+  async getProof(marketId: string): Promise<ProofOfObservation | null> {
     if (typeof window !== "undefined") await wait(140);
-    return proofs[marketId] ?? null;
+    const now = Date.now();
+    const market = findMarketAt(marketId, now);
+    return market ? proofFor(market, now) : null;
   }
 
   async getPortfolio(address: `0x${string}`) {
     if (typeof window !== "undefined") await wait(320);
-    const portfolio: Portfolio = {
-      address,
-      balance: 428.75,
-      totalPositioned: 90,
-      claimable: 39,
-      positions: [
-        {
-          id: "position-1042",
-          marketId: "indore-gate-a",
-          question: markets[0].question,
-          outcomeLabel: "Yes, above 180",
-          amount: 25,
-          estimatedReturn: 39,
-          state: "Open",
-          createdAt: "2026-07-20T13:44:00.000Z",
-        },
-        {
-          id: "position-1038",
-          marketId: "pune-ev-lot",
-          question: markets[1].question,
-          outcomeLabel: "No, 85% or below",
-          amount: 65,
-          estimatedReturn: 118.3,
-          state: "Claimable",
-          createdAt: "2026-07-20T12:18:00.000Z",
-        },
-      ],
-    };
-    return portfolio;
+    return buildPortfolio(address, Date.now());
   }
 
   async getLeaderboard() {
@@ -171,7 +213,9 @@ export class MockScryApi implements ScryApi {
 
   async getRoomMessages(marketId: string) {
     if (typeof window !== "undefined") await wait(220);
-    return roomMessages[marketId] ?? [];
+    const market = findMarketAt(marketId, Date.now());
+    if (!market) return [];
+    return [...seededMessages(market), ...(postedMessages.get(marketId) ?? [])];
   }
 
   async postRoomMessage(marketId: string, input: CreateRoomMessage) {
@@ -184,31 +228,59 @@ export class MockScryApi implements ScryApi {
       body: input.body,
       createdAt: new Date().toISOString(),
     };
-    roomMessages[marketId] = [...(roomMessages[marketId] ?? []), message];
+    postedMessages.set(marketId, [...(postedMessages.get(marketId) ?? []), message]);
     return message;
   }
 
   async getNotifications() {
     if (typeof window !== "undefined") await wait(240);
-    return notifications;
+    return buildNotifications(Date.now());
   }
 
   subscribeToMarket(marketId: string, subscription: MarketSubscription) {
     if (typeof window === "undefined") return () => undefined;
-    const market = marketCatalog.find((item) => item.id === marketId);
-    if (!market) {
+    if (!marketSeeds.some((seed) => seed.id === marketId)) {
       subscription.onError(new Error("Market subscription not found."));
       return () => undefined;
     }
-    const timer = window.setInterval(() => {
+
+    let lastStatus: MarketStatus | null = null;
+    let lastProbability: number | null = null;
+
+    function emit() {
+      const now = Date.now();
+      const market = findMarketAt(marketId, now);
+      if (!market) return;
+      const recordedAt = new Date(now).toISOString();
+
       subscription.onEvent({
         type: "market.count",
         marketId,
-        count: 126,
+        count: liveCountFor(market, now),
         rate: market.currentRate,
-        recordedAt: new Date().toISOString(),
+        recordedAt,
       });
-    }, 5000);
+
+      const leading = market.outcomes[0];
+      if (leading.probability !== lastProbability) {
+        lastProbability = leading.probability;
+        subscription.onEvent({
+          type: "market.probability",
+          marketId,
+          outcomeId: leading.id,
+          probability: leading.probability,
+          recordedAt,
+        });
+      }
+
+      if (market.status !== lastStatus) {
+        lastStatus = market.status;
+        subscription.onEvent({ type: "market.status", marketId, status: market.status, recordedAt });
+      }
+    }
+
+    emit();
+    const timer = window.setInterval(emit, 2000);
     return () => window.clearInterval(timer);
   }
 }

@@ -17,9 +17,26 @@ import (
 
 func main() {
 	settings := config.Load()
+
+	var data store.Store = store.NewMemory()
+	if settings.DatabaseURL != "" {
+		startup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		postgres, err := store.NewPostgres(startup, settings.DatabaseURL)
+		cancel()
+		if err != nil {
+			slog.Error("Scry API could not reach the database", "error", err)
+			os.Exit(1)
+		}
+		defer postgres.Close()
+		data = postgres
+		slog.Info("Scry API using Postgres")
+	} else {
+		slog.Warn("SCRY_DATABASE_URL is unset, serving from the in-memory store")
+	}
+
 	server := &http.Server{
 		Addr:              settings.Address,
-		Handler:           httpapi.New(store.NewMemory(), nil, settings.AllowedOrigin),
+		Handler:           httpapi.New(data, nil, settings.AllowedOrigin),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

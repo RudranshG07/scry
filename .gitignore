@@ -1,16 +1,42 @@
+# build output
 .next/
+out/
+dist/
+build/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# dependencies
 node_modules/
+.venv/
 __pycache__/
 *.pyc
-tsconfig.tsbuildinfo
-.DS_Store
+
+# secrets and local config
 .env
 .env.*
 !.env.example
-.venv/
-.pytest_cache/
-coverage/
-*.log
+
+# go
+*.exe
+*.test
+vendor/
+
+# contracts
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# test and tooling output
+coverage/
+.pytest_cache/
+playwright-report/
+test-results/
+*.log
+
+# editors and os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

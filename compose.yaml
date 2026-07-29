@@ -45,6 +45,25 @@ services:
       - ./infrastructure/nats.conf:/etc/nats/nats.conf:ro
       - nats-data:/data
 
+  # Republishes every camera from an origin Scry controls, so the browser never
+  # depends on a third-party CDN being reachable. Set SCRY_MEDIA_ORIGIN to
+  # http://127.0.0.1:8888 to make the stream resolver prefer it.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${SCRY_HLS_PORT:-8888}:8888
+      - 127.0.0.1:${SCRY_WEBRTC_PORT:-8889}:8889
+      - 127.0.0.1:${SCRY_MEDIA_API_PORT:-9997}:9997
+    volumes:
+      - ./infrastructure/mediamtx.yml:/mediamtx.yml:ro
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O- http://127.0.0.1:9997/v3/paths/list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
 volumes:
   timescale-data:
   redis-data:

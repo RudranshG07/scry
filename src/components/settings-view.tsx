@@ -37,7 +37,7 @@ export function SettingsView() {
       <main className="mx-auto max-w-5xl px-4 py-8 md:px-6 lg:px-8">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ring">Responsible use</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Controls that stay in your hands.</h1>
+          <h1 className="mt-2 display text-4xl md:text-5xl">Controls that stay in your hands.</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">These preview settings are stored locally. Server-enforced limits and eligibility checks will replace them before monetary access exists.</p>
         </div>
 

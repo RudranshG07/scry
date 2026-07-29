@@ -198,10 +198,6 @@ func (server *Server) getPlaybackToken(writer http.ResponseWriter, request *http
 	writeJSON(writer, http.StatusOK, map[string]string{"token": token})
 }
 
-func (server *Server) marketStream(writer http.ResponseWriter, _ *http.Request) {
-	writeError(writer, http.StatusNotImplemented, "realtime_not_configured", "Realtime market streaming is not configured.")
-}
-
 func identifier() string {
 	value := make([]byte, 12)
 	if _, err := rand.Read(value); err != nil {

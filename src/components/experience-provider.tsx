@@ -96,7 +96,7 @@ function AccessGate({ onContinue }: { onContinue: (jurisdiction: Jurisdiction) =
         </div>
         <div className="mt-8">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ring">Before you enter</p>
-          <h1 id="access-title" className="mt-3 text-3xl font-semibold tracking-[-0.04em]">Watch and forecast responsibly.</h1>
+          <h1 id="access-title" className="mt-3 display text-4xl">Watch and forecast responsibly.</h1>
           <p className="mt-3 max-w-prose text-sm leading-6 text-muted-foreground">This build is a product preview. It does not submit positions, move funds, or determine legal eligibility.</p>
         </div>
         <form className="mt-7 space-y-5" onSubmit={submit} noValidate>

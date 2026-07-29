@@ -7,6 +7,41 @@ function playbackKind(url: string) {
   return /\.m3u8(?:$|[?#])/i.test(url) ? "hls" : "video";
 }
 
+export function proxiedStreamUrl(url: string) {
+  return `/api/stream?url=${encodeURIComponent(url)}`;
+}
+
+export function needsStreamProxy(
+  url: string,
+  hosts = process.env.NEXT_PUBLIC_SCRY_STREAM_PROXY_HOSTS?.trim(),
+) {
+  if (!hosts) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hosts
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+    .some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+}
+
+export function resolveMarketPlayback(
+  streamId: string,
+  sourceUrl?: string,
+  proxyHosts?: string,
+): StreamPlayback {
+  const source = sourceUrl?.trim();
+  if (!source) return resolveStreamPlayback(streamId);
+
+  const absolute = /^https?:\/\//i.test(source);
+  const url = absolute && needsStreamProxy(source, proxyHosts) ? proxiedStreamUrl(source) : source;
+  return { kind: playbackKind(source), url };
+}
+
 export function resolveStreamPlayback(
   streamId: string,
   template = process.env.NEXT_PUBLIC_SCRY_STREAM_URL_TEMPLATE?.trim(),

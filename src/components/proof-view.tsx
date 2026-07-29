@@ -38,7 +38,7 @@ export function ProofView({ market, proof }: { market: Market; proof: ProofOfObs
               <Fingerprint className="size-4" aria-hidden="true" />
               Proof of Observation
             </div>
-            <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.04em] md:text-4xl">{market.question}</h1>
+            <h1 className="mt-3 max-w-3xl display text-4xl md:text-5xl">{market.question}</h1>
             <p className="mt-3 text-sm text-muted-foreground">{market.city} · {market.location} · {proof.streamId}</p>
           </div>
           <div className="rounded-card border border-accent/30 bg-accent/8 p-5">

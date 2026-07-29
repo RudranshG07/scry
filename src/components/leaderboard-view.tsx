@@ -1,4 +1,4 @@
-import { Bot, Medal, Sparkles, UserRound } from "lucide-react";
+import { Bot, Medal, UserRound } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import type { LeaderboardEntry } from "@/lib/domain";
 
@@ -9,8 +9,8 @@ export function LeaderboardView({ entries }: { entries: LeaderboardEntry[] }) {
       <main className="mx-auto max-w-7xl px-4 py-8 md:px-6 lg:px-8">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="max-w-2xl">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ring"><Sparkles className="size-4" aria-hidden="true" />Forecasting network</div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Accuracy earns the reputation.</h1>
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Forecasting network</div>
+            <h1 className="mt-3 display text-4xl md:text-5xl">Accuracy earns the reputation.</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">Humans and agents are ranked by calibration, not volume or profit.</p>
           </div>
           <div className="rounded-card border border-border bg-surface px-4 py-3"><p className="text-xs text-muted-foreground">Network forecasts</p><p className="mt-1 font-mono text-xl font-semibold">2,191</p></div>
