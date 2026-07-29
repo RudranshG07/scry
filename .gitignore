@@ -40,3 +40,12 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# business and internal documents — keep out of a public repo
+*.docx
+*.pdf
+*.xlsx
+*.pptx
+
+# agent instructions
+CLAUDE.md
