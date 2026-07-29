@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/RudranshG07/scry/services/api-go/internal/config"
+	"github.com/RudranshG07/scry/services/api-go/internal/engine"
 	"github.com/RudranshG07/scry/services/api-go/internal/httpapi"
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
@@ -30,6 +31,10 @@ func main() {
 		defer postgres.Close()
 		data = postgres
 		slog.Info("Scry API using Postgres")
+
+		engineCtx, stopEngine := context.WithCancel(context.Background())
+		defer stopEngine()
+		go engine.New(postgres.Pool(), slog.Default()).Run(engineCtx)
 	} else {
 		slog.Warn("SCRY_DATABASE_URL is unset, serving from the in-memory store")
 	}
