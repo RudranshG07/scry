@@ -19,7 +19,15 @@ const marketQuery = `
 	                 WHERE p.market_id = m.id), 0)::float8,
 	       COALESCE((SELECT h.probability FROM market_probability_history h
 	                 WHERE h.market_id = m.id AND h.source = 'scry_ai'
-	                 ORDER BY h.recorded_at DESC LIMIT 1), 0)::float8
+	                 ORDER BY h.recorded_at DESC LIMIT 1), 0)::float8,
+	       COALESCE((SELECT SUM(c.event_count)::float8 * 60 / NULLIF(SUM(c.interval_seconds), 0)
+	                 FROM count_observations c
+	                 WHERE c.stream_id = m.stream_id
+	                   AND c.observed_at > NOW() - INTERVAL '5 minutes'), 0)::float8,
+	       COALESCE((SELECT SUM(c.event_count)::float8 * 60 / NULLIF(SUM(c.interval_seconds), 0)
+	                 FROM count_observations c
+	                 WHERE c.stream_id = m.stream_id
+	                   AND c.observed_at > NOW() - INTERVAL '7 days'), 0)::float8
 	FROM markets m
 	JOIN streams s ON s.id = m.stream_id`
 
@@ -33,6 +41,7 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 		&m.ID, &m.StreamID, &m.Category, &m.Location, &m.City, &m.Question, &m.Status,
 		&opens, &locks, &ends, &challenge,
 		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool, &ai,
+		&m.CurrentRate, &m.Baseline,
 	)
 	if err != nil {
 		return domain.Market{}, err
@@ -43,6 +52,9 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	m.ObservationEndsAt = stamp(ends)
 	m.ResolvedAt = stampOrNil(challenge)
 	m.Forecast = round(ai*100, 0)
+	m.Unit = domain.UnitFor(m.Category)
+	m.CurrentRate = round(m.CurrentRate, 1)
+	m.Baseline = round(m.Baseline, 1)
 	return m, nil
 }
 

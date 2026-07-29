@@ -53,6 +53,7 @@ func (e *Engine) step(ctx context.Context) {
 		{"propose", e.propose},
 		{"settle", e.settle},
 		{"schedule", e.schedule},
+		{"history", e.history},
 	} {
 		if err := job.run(ctx); err != nil {
 			e.log.Error("engine job failed", "job", job.name, "error", err)

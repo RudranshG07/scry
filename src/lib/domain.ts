@@ -23,6 +23,7 @@ export type Market = {
   id: string;
   streamId: string;
   category: Category;
+  unit?: string;
   location: string;
   city: string;
   question: string;

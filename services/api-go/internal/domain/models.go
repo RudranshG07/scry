@@ -11,6 +11,7 @@ type Market struct {
 	ID                string          `json:"id"`
 	StreamID          string          `json:"streamId"`
 	Category          string          `json:"category"`
+	Unit              string          `json:"unit"`
 	Location          string          `json:"location"`
 	City              string          `json:"city"`
 	Question          string          `json:"question"`
@@ -133,4 +134,23 @@ type CountSample struct {
 	IntervalSeconds int     `json:"intervalSeconds"`
 	Quality         float64 `json:"streamQuality"`
 	ModelVersion    string  `json:"modelVersion"`
+}
+
+// Units name what a market counts. The category decides it, so a client never
+// has to guess from the question text.
+var Units = map[string]string{
+	"Traffic":    "vehicles",
+	"Parking":    "arrivals",
+	"Queues":     "people",
+	"Operations": "items",
+	"Footfall":   "people",
+	"Mobility":   "vehicles",
+	"Weather":    "readings",
+}
+
+func UnitFor(category string) string {
+	if unit, ok := Units[category]; ok {
+		return unit
+	}
+	return "events"
 }

@@ -122,6 +122,10 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
     shape = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
     counter = CountLineTracker(line, CounterConfig(minimum_confidence=0.6, deadband_distance=3))
+    samples: list[dict] = []
+    bucket_seconds = 60
+    bucket_started = datetime.now(UTC)
+    bucket_base = 0
     tracker = Centroids()
     health = Health()
     started = datetime.now(UTC)
@@ -157,8 +161,31 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
             confidence = next((s for c, s in detections if c is point), 0.6)
             counter.ingest(TrackSample(track_id, now, point, confidence, "vehicle"))
 
+        elapsed_bucket = (now - bucket_started).total_seconds()
+        if elapsed_bucket >= bucket_seconds:
+            samples.append({
+                "observedAt": bucket_started.isoformat().replace("+00:00", "Z"),
+                "count": counter.count - bucket_base,
+                "intervalSeconds": int(elapsed_bucket),
+                "streamQuality": round(health.visibility(), 4),
+                "modelVersion": MODEL_VERSION,
+            })
+            bucket_base = counter.count
+            bucket_started = now
+
     capture.release()
-    elapsed = (datetime.now(UTC) - started).total_seconds()
+    finished = datetime.now(UTC)
+    elapsed = (finished - started).total_seconds()
+
+    tail = (finished - bucket_started).total_seconds()
+    if tail >= 1:
+        samples.append({
+            "observedAt": bucket_started.isoformat().replace("+00:00", "Z"),
+            "count": counter.count - bucket_base,
+            "intervalSeconds": int(tail),
+            "streamQuality": round(health.visibility(), 4),
+            "modelVersion": MODEL_VERSION,
+        })
 
     return {
         "ok": health.frames > 0,
@@ -169,6 +196,7 @@ def observe(url: str, line: CountLine, seconds: float, width: int = 640, height:
         "frames": health.frames,
         "elapsed": round(elapsed, 1),
         "modelVersion": MODEL_VERSION,
+        "counts": samples,
     }
 
 
@@ -198,6 +226,7 @@ def submit(api: str, market: str, observer: str, role: str, result: dict) -> tup
         "averageVisibility": result.get("visibility", 0.0),
         "longestFrozenSeconds": result.get("frozenSeconds", 0.0),
         "invalidReasons": reasons,
+        "counts": result.get("counts", []),
     }).encode()
 
     request = urllib.request.Request(

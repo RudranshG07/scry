@@ -60,6 +60,7 @@ export function Stage({
   const [activeSource, setActiveSource] = useState<ResolvedStream | null>(null);
   const handleSourceChange = useCallback((source: ResolvedStream | null) => setActiveSource(source), []);
   const isLiveSource = Boolean(activeSource?.live) && phase.isLive && connected;
+  const unit = market.unit ?? marketUnit(market.id);
 
   return (
     <div>
@@ -130,7 +131,7 @@ export function Stage({
         <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{settled ? "Final" : "Observed"}</p>
         <p className="mt-1 font-mono text-3xl tabular-nums">
           {observedCount === null ? "—" : formatCount(observedCount)}
-          <span className="ml-2 text-xs text-muted-foreground">{marketUnit(market.id)}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{unit}</span>
         </p>
       </div>
       <div>
@@ -151,7 +152,9 @@ export function Stage({
         <p className="ml-auto max-w-64 text-right text-[11px] leading-4 text-muted-foreground">
           {activeSource ? `${activeSource.live ? "Live source" : "Fallback"}: ${activeSource.name}` : "Selecting a live source"}
           <br />
-          Counts are simulated until the vision pipeline is connected.
+          {market.observers > 0
+            ? `${market.observers} of 3 observers reporting`
+            : "Waiting on an observer to report"}
         </p>
       )}
     </div>

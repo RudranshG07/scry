@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
 const (
@@ -23,15 +25,6 @@ type streamPlan struct {
 	id        string
 	category  string
 	threshold int64
-}
-
-var units = map[string]string{
-	"Traffic":    "vehicles",
-	"Parking":    "arrivals",
-	"Queues":     "people",
-	"Operations": "items",
-	"Footfall":   "people",
-	"Mobility":   "vehicles",
 }
 
 // schedule keeps one market in flight per qualified stream. A stream with
@@ -78,10 +71,7 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 	ends := locks.Add(observeWindow)
 
 	id := fmt.Sprintf("%s-%d", p.id, opens.Unix())
-	unit := units[p.category]
-	if unit == "" {
-		unit = "events"
-	}
+	unit := domain.UnitFor(p.category)
 	question := fmt.Sprintf("Will more than %d %s cross the count line during the observation window?",
 		p.threshold, unit)
 
