@@ -105,6 +105,7 @@ export function materializeMarket(seed: MarketSeed, now: number): Market {
     observers: seed.observers,
     opensAt: new Date(opensAt).toISOString(),
     locksAt: new Date(locksAt).toISOString(),
+    observationStartsAt: new Date(observationStartsAt).toISOString(),
     observationEndsAt: new Date(observationEndsAt).toISOString(),
     outcomes: outcomesFor(seed, seed.prior),
     trend: trendFor(seed, cycleStart, 0),

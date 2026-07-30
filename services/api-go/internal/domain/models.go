@@ -8,28 +8,29 @@ type MarketOutcome struct {
 }
 
 type Market struct {
-	ID                string          `json:"id"`
-	StreamID          string          `json:"streamId"`
-	Category          string          `json:"category"`
-	Unit              string          `json:"unit"`
-	Location          string          `json:"location"`
-	City              string          `json:"city"`
-	Question          string          `json:"question"`
-	Status            string          `json:"status"`
-	Countdown         string          `json:"countdown"`
-	Pool              float64         `json:"pool"`
-	Forecast          float64         `json:"forecast"`
-	CurrentRate       float64         `json:"currentRate"`
-	Baseline          float64         `json:"baseline"`
-	Observers         int             `json:"observers"`
-	OpensAt           string          `json:"opensAt"`
-	LocksAt           string          `json:"locksAt"`
-	ObservationEndsAt string          `json:"observationEndsAt"`
-	ResolvedAt        *string         `json:"resolvedAt,omitempty"`
-	ObservedValue     *int64          `json:"observedValue,omitempty"`
-	WinningOutcomeID  *string         `json:"winningOutcomeId,omitempty"`
-	Outcomes          []MarketOutcome `json:"outcomes"`
-	Trend             []float64       `json:"trend"`
+	ID                  string          `json:"id"`
+	StreamID            string          `json:"streamId"`
+	Category            string          `json:"category"`
+	Unit                string          `json:"unit"`
+	Location            string          `json:"location"`
+	City                string          `json:"city"`
+	Question            string          `json:"question"`
+	Status              string          `json:"status"`
+	Countdown           string          `json:"countdown"`
+	Pool                float64         `json:"pool"`
+	Forecast            float64         `json:"forecast"`
+	CurrentRate         float64         `json:"currentRate"`
+	Baseline            float64         `json:"baseline"`
+	Observers           int             `json:"observers"`
+	OpensAt             string          `json:"opensAt"`
+	LocksAt             string          `json:"locksAt"`
+	ObservationStartsAt string          `json:"observationStartsAt"`
+	ObservationEndsAt   string          `json:"observationEndsAt"`
+	ResolvedAt          *string         `json:"resolvedAt,omitempty"`
+	ObservedValue       *int64          `json:"observedValue,omitempty"`
+	WinningOutcomeID    *string         `json:"winningOutcomeId,omitempty"`
+	Outcomes            []MarketOutcome `json:"outcomes"`
+	Trend               []float64       `json:"trend"`
 }
 
 type Observer struct {

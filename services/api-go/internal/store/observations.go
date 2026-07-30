@@ -50,7 +50,12 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 			longest_frozen_seconds = EXCLUDED.longest_frozen_seconds,
 			invalid_reasons = EXCLUDED.invalid_reasons,
 			signature = EXCLUDED.signature,
-			recorded_at = EXCLUDED.recorded_at`,
+			recorded_at = EXCLUDED.recorded_at
+		-- Observers retry inside a window, so a stream that drops out near the
+		-- end would otherwise replace a good count with an empty one. A clean
+		-- reading is never downgraded; a faulted one can still be corrected.
+		WHERE cardinality(EXCLUDED.invalid_reasons) = 0
+		   OR cardinality(observer_reports.invalid_reasons) > 0`,
 		r.MarketID, r.ObserverID, r.Role, r.ObservedValue, r.Confidence, r.ModelVersion,
 		r.Uptime, r.DriftMS, r.Visibility, r.FrozenSeconds,
 		r.InvalidReasons, r.Signature, time.Now().UTC())

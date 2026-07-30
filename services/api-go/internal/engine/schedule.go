@@ -36,8 +36,9 @@ func (e *Engine) schedule(ctx context.Context) error {
 		FROM streams s
 		WHERE s.status = 'Qualified'
 		  -- A stream with no playback source cannot be observed, so a market on
-		  -- it could only ever invalidate. Do not open one.
-		  AND s.public_playback_id IS NOT NULL
+		  -- it could only ever invalidate. Do not open one. An unset source
+		  -- reaches us as both NULL and empty text, and empty passes IS NOT NULL.
+		  AND coalesce(btrim(s.public_playback_id), '') <> ''
 		  AND NOT EXISTS (
 		      SELECT 1 FROM markets m
 		      WHERE m.stream_id = s.id

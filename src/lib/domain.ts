@@ -36,6 +36,7 @@ export type Market = {
   observers: number;
   opensAt: string;
   locksAt: string;
+  observationStartsAt: string;
   observationEndsAt: string;
   resolvedAt?: string;
   observedValue?: number;

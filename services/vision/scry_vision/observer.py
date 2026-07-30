@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import hypot
 
@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from .counter import CountLineTracker
+from .health import Health, faults
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
 
 # How far a centroid may move between frames and still be the same vehicle.
@@ -55,25 +56,6 @@ class Track:
     id: str
     centroid: Point
     misses: int = 0
-
-
-@dataclass
-class Health:
-    frames: int = 0
-    dropped: int = 0
-    frozen_run: int = 0
-    longest_frozen: int = 0
-    brightness: list[float] = field(default_factory=list)
-
-    def uptime(self, fps: float) -> float:
-        total = self.frames + self.dropped
-        return self.frames / total if total else 0.0
-
-    def visibility(self) -> float:
-        if not self.brightness:
-            return 0.0
-        # A usable frame has contrast. Flat frames mean fog, glare or a dead sensor.
-        return float(min(1.0, np.mean(self.brightness) / 60.0))
 
 
 class Centroids:
@@ -163,7 +145,7 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
         health.frames += 1
         small = cv2.resize(frame, (width, height))
         grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-        health.brightness.append(float(grey.std()))
+        health.contrast.append(float(grey.std()))
 
         # An identical frame means the encoder is repeating itself.
         if previous is not None and np.array_equal(grey, previous):
@@ -230,13 +212,7 @@ def horizontal_line(height: int = 360, width: int = 640, at: float = 0.6) -> Cou
 
 
 def submit(api: str, market: str, observer: str, role: str, result: dict) -> tuple[int, str]:
-    reasons = []
-    if not result["ok"]:
-        reasons.append("evidence_unavailable")
-    if result.get("uptime", 0) < 0.99:
-        reasons.append("uptime_below_minimum")
-    if result.get("visibility", 0) < 0.90:
-        reasons.append("visibility_below_minimum")
+    reasons = faults(result["ok"], result.get("uptime", 0), result.get("visibility", 0))
 
     body = json.dumps({
         "observerId": observer,

@@ -3,7 +3,7 @@
 import type { Market } from "@/lib/domain";
 import { formatCount } from "@/lib/format";
 import { marketDirectory, marketUnit } from "@/lib/markets";
-import { challengeWindowMs, formatSchedule, lockGraceMs } from "@/lib/time";
+import { challengeWindowMs, formatSchedule } from "@/lib/time";
 
 function Criterion({ label, value }: { label: string; value: string }) {
   return (
@@ -17,7 +17,6 @@ function Criterion({ label, value }: { label: string; value: string }) {
 export function Resolution({ market }: { market: Market }) {
   const entry = marketDirectory.get(market.id);
   const unit = marketUnit(market.id);
-  const observationStartsAt = new Date(new Date(market.locksAt).getTime() + lockGraceMs).toISOString();
 
   return (
     <section aria-labelledby="resolution-heading">
@@ -38,7 +37,7 @@ export function Resolution({ market }: { market: Market }) {
           label="Threshold"
           value={entry ? `Resolves yes above ${formatCount(entry.threshold)} ${unit}.` : "Published with the market rule."}
         />
-        <Criterion label="Observation window" value={`${formatSchedule(observationStartsAt)} to ${formatSchedule(market.observationEndsAt)}`} />
+        <Criterion label="Observation window" value={`${formatSchedule(market.observationStartsAt)} to ${formatSchedule(market.observationEndsAt)}`} />
         <Criterion label="Quorum" value="Two of three independent observers must sign the same value." />
         <Criterion label="Minimum uptime" value="99.0% of the window, or the market invalidates and refunds." />
         <Criterion label="Challenge window" value={`${challengeWindowMs / 60_000} minutes after the result is proposed.`} />

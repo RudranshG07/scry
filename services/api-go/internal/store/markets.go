@@ -13,7 +13,7 @@ import (
 
 const marketQuery = `
 	SELECT m.id, m.stream_id, s.category, s.name, s.region, m.question, m.status,
-	       m.opens_at, m.locks_at, m.observation_ends_at, m.challenge_ends_at,
+	       m.opens_at, m.locks_at, m.observation_starts_at, m.observation_ends_at, m.challenge_ends_at,
 	       m.observed_value, m.winning_outcome_id,
 	       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
 	                 WHERE p.market_id = m.id), 0)::float8,
@@ -33,13 +33,13 @@ const marketQuery = `
 
 func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	var m domain.Market
-	var opens, locks, ends time.Time
+	var opens, locks, starts, ends time.Time
 	var challenge *time.Time
 	var ai float64
 
 	err := row.Scan(
 		&m.ID, &m.StreamID, &m.Category, &m.Location, &m.City, &m.Question, &m.Status,
-		&opens, &locks, &ends, &challenge,
+		&opens, &locks, &starts, &ends, &challenge,
 		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool, &ai,
 		&m.CurrentRate, &m.Baseline,
 	)
@@ -49,6 +49,7 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 
 	m.OpensAt = stamp(opens)
 	m.LocksAt = stamp(locks)
+	m.ObservationStartsAt = stamp(starts)
 	m.ObservationEndsAt = stamp(ends)
 	m.ResolvedAt = stampOrNil(challenge)
 	m.Forecast = round(ai*100, 0)

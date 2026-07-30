@@ -52,6 +52,7 @@ func (e *Engine) step(ctx context.Context) {
 		{"observe", e.observe},
 		{"propose", e.propose},
 		{"settle", e.settle},
+		{"qualify", e.qualify},
 		{"schedule", e.schedule},
 		{"history", e.history},
 	} {

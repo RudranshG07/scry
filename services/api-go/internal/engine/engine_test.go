@@ -146,3 +146,44 @@ func TestConsensusStillRejectsWildDisagreement(t *testing.T) {
 		t.Error("100 and 200 agreed; 5% of 100 is 5, not 100")
 	}
 }
+
+// Paired observer counts measured off the three live cameras. Two of them
+// settle inside the bar window after window; the third does not, and the
+// difference is the camera rather than the detector, which is the case this
+// gate exists to catch.
+func TestVerdictSuspendsOnlyTheStreamObserversCannotAgreeOn(t *testing.T) {
+	cases := []struct {
+		stream  string
+		windows []window
+		want    string
+	}{
+		{"sd-8-15", []window{{238, 246}, {155, 157}, {193, 195}, {318, 318}}, "Qualified"},
+		{"sd-5-28th", []window{{127, 146}, {106, 115}, {21, 21}, {318, 318}}, "Suspended"},
+	}
+	for _, c := range cases {
+		got, agreed, ok := verdict(c.windows)
+		if !ok {
+			t.Fatalf("%s: not judged on %d windows", c.stream, len(c.windows))
+		}
+		if got != c.want {
+			t.Errorf("%s: %s after %d/%d agreed, want %s",
+				c.stream, got, agreed, len(c.windows), c.want)
+		}
+	}
+}
+
+func TestVerdictWithholdsJudgementUntilThereIsHistory(t *testing.T) {
+	// One bad window is a truck, not a broken camera. Suspending on it would
+	// take a working stream offline for noise.
+	if _, _, ok := verdict([]window{{100, 180}}); ok {
+		t.Error("judged a stream on a single window")
+	}
+}
+
+func TestVerdictToleratesTheOccasionalBadWindow(t *testing.T) {
+	ws := []window{{200, 204}, {150, 152}, {100, 180}, {180, 182}}
+	got, _, _ := verdict(ws)
+	if got != "Qualified" {
+		t.Errorf("got %s; 3 of 4 windows agreed, which is above the bar", got)
+	}
+}
