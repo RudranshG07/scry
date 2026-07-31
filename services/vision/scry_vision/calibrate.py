@@ -15,14 +15,25 @@ import sys
 import threading
 from datetime import UTC, datetime
 
+from .health import MIN_UPTIME
+
 
 def spread(a: int, b: int) -> float:
     lo, hi = sorted((a, b))
     return 100.0 * (hi - lo) / lo if lo else 0.0
 
 
-def summarise(runs: list[dict]) -> dict:
+def summarise(runs: list[dict], settleable_only: bool = False) -> dict:
+    """Summarise the spread across windows.
+
+    settleable_only keeps just the windows the resolver would actually accept.
+    A window that lost frames is thrown away before it ever reaches consensus, so
+    counting its disagreement against the detector blames the model for footage
+    it never received.
+    """
     good = [r for r in runs if r["ok"]]
+    if settleable_only:
+        good = [r for r in good if r["uptime"] >= MIN_UPTIME]
     if not good:
         return {"windows": 0}
     gaps = [r["spread"] for r in good]
@@ -84,15 +95,29 @@ def run(url: str, seconds: float, windows: int, bar: float) -> int:
               f"{r['uptime']:>7.3f} {r['drift']:>5.1f}s"
               f"   ({(datetime.now(UTC) - started).total_seconds():.0f}s)", flush=True)
 
-    s = summarise(runs)
-    if not s["windows"]:
+    everything = summarise(runs)
+    if not everything["windows"]:
         print("\nno usable windows")
         return 1
 
-    print(f"\nmean {s['mean']}%  median {s['median']}%  best {s['best']}%  worst {s['worst']}%"
-          + (f"  stdev {s['stdev']}%" if s["stdev"] is not None else ""))
-    if s["failed"]:
-        print(f"{s['failed']} window(s) produced no frames")
+    print(f"\nall windows       mean {everything['mean']}%  median {everything['median']}%  "
+          f"best {everything['best']}%  worst {everything['worst']}%"
+          + (f"  stdev {everything['stdev']}%" if everything["stdev"] is not None else ""))
+    if everything["failed"]:
+        print(f"{everything['failed']} window(s) produced no frames")
+
+    # The verdict rests on windows that could actually settle. The rest are
+    # already refused for uptime long before consensus looks at them.
+    s = summarise(runs, settleable_only=True)
+    if not s["windows"]:
+        print(f"\nno window held {MIN_UPTIME:.0%} uptime, so none of these could have settled")
+        return 1
+
+    dropped = everything["windows"] - s["windows"]
+    print(f"settleable only   mean {s['mean']}%  median {s['median']}%  "
+          f"best {s['best']}%  worst {s['worst']}%"
+          + (f"  stdev {s['stdev']}%" if s["stdev"] is not None else "")
+          + (f"   ({dropped} dropped below {MIN_UPTIME:.0%} uptime)" if dropped else ""))
 
     # The mean alone invites false confidence. A detector whose spread swings by
     # more than the bar itself cannot be said to meet the bar, however good the

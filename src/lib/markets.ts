@@ -365,7 +365,22 @@ export const streamSourcePool: Record<string, Array<{ url: string; name: string;
 };
 
 export function sourcesFor(id: string) {
-  return streamSourcePool[id] ?? marketDirectory.get(id)?.streamSources ?? [];
+  return streamSourcePool[id] ?? streamSourcePool[streamKeyFor(id) ?? ""] ?? marketDirectory.get(id)?.streamSources ?? [];
+}
+
+/**
+ * The stream a market observes. Relay paths are keyed by stream because one
+ * camera outlives many markets on it, while ids arriving here are market ids
+ * like `stream-sd-8-15-1785476115`. Asking the relay for a market id gets a
+ * miss and quietly falls back to the third-party camera the relay exists to
+ * avoid.
+ */
+export function streamKeyFor(id: string): string | null {
+  if (streamSourcePool[id]) return id;
+  const keys = Object.keys(streamSourcePool).filter((key) => id.startsWith(key));
+  if (keys.length === 0) return null;
+  // Longest match wins, so a stream id that prefixes another cannot capture it.
+  return keys.reduce((longest, key) => (key.length > longest.length ? key : longest));
 }
 
 export function clipFor(id: string) {

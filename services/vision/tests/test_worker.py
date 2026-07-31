@@ -149,6 +149,33 @@ class RelayTest(unittest.TestCase):
         relay = "http://127.0.0.1:8888"
         self.assertNotEqual(self.url(relay, "stream-sd-8-15"), self.url(relay, "stream-sd-5-28th"))
 
+class SettleableTest(unittest.TestCase):
+    """A window that lost frames never reaches consensus, so its disagreement is
+    not evidence about the detector."""
+
+    def runs(self):
+        return [
+            {"ok": True, "spread": 10.1, "uptime": 0.88},
+            {"ok": True, "spread": 6.1, "uptime": 1.0},
+            {"ok": True, "spread": 7.4, "uptime": 1.0},
+            {"ok": True, "spread": 16.0, "uptime": 0.88},
+            {"ok": True, "spread": 4.8, "uptime": 1.0},
+        ]
+
+    def test_degraded_windows_are_excluded_from_the_verdict(self):
+        s = summarise(self.runs(), settleable_only=True)
+        self.assertEqual(s["windows"], 3)
+        self.assertEqual(s["worst"], 7.4)
+
+    def test_counting_them_overstates_the_spread(self):
+        everything = summarise(self.runs())
+        settleable = summarise(self.runs(), settleable_only=True)
+        self.assertGreater(everything["mean"], settleable["mean"])
+
+    def test_no_settleable_window_is_reported_rather_than_averaged_away(self):
+        starved = [{"ok": True, "spread": 3.0, "uptime": 0.5}]
+        self.assertEqual(summarise(starved, settleable_only=True)["windows"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

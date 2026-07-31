@@ -1,4 +1,4 @@
-import { clipFor, sourcesFor } from "@/lib/markets";
+import { clipFor, sourcesFor, streamKeyFor } from "@/lib/markets";
 
 export type ResolvedStream = {
   url: string;
@@ -82,7 +82,7 @@ export async function GET(_request: Request, context: { params: Promise<{ market
   // An origin we control always wins: mediamtx reconnects behind a stable path.
   const origin = process.env.SCRY_MEDIA_ORIGIN?.trim().replace(/\/+$/, "");
   if (origin && sources.length > 0) {
-    const republished = `${origin}/${encodeURIComponent(marketId)}/index.m3u8`;
+    const republished = `${origin}/${encodeURIComponent(streamKeyFor(marketId) ?? marketId)}/index.m3u8`;
     if (await isPlayable(republished)) {
       return finish({ url: republished, name: sources[0].name, kind: "hls", live: true, daylight: true });
     }
