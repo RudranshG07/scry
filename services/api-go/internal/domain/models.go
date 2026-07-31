@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type MarketOutcome struct {
 	ID          string  `json:"id"`
 	Label       string  `json:"label"`
@@ -40,6 +42,8 @@ type Observer struct {
 	State        string  `json:"state"`
 	ModelVersion string  `json:"modelVersion"`
 	Signature    *string `json:"signature,omitempty"`
+	EvidenceRoot *string `json:"evidenceRoot,omitempty"`
+	Samples      int     `json:"samples"`
 }
 
 type ObservationWindow struct {
@@ -125,7 +129,33 @@ type ObserverReport struct {
 	FrozenSeconds  float64       `json:"longestFrozenSeconds"`
 	InvalidReasons []string      `json:"invalidReasons"`
 	Signature      *string       `json:"signature,omitempty"`
+	EvidenceRoot   *string       `json:"evidenceRoot,omitempty"`
 	Counts         []CountSample `json:"counts,omitempty"`
+}
+
+// EvidenceSample is one counting interval with the siblings needed to check it
+// against the published root, so a single interval can be verified without
+// republishing the footage behind it.
+type EvidenceSample struct {
+	ObservedAt      time.Time `json:"observedAt"`
+	Count           int64     `json:"count"`
+	IntervalSeconds int       `json:"intervalSeconds"`
+	Quality         float64   `json:"streamQuality"`
+	ModelVersion    string    `json:"modelVersion"`
+	FrameDigest     string    `json:"frameDigest"`
+	Proof           []string  `json:"proof"`
+}
+
+// EvidenceBundle carries the root the observer published alongside the root
+// recomputed here from the stored intervals. They are shown separately on
+// purpose: if they disagree, the record has been altered since it was committed,
+// and hiding that behind a single field would be the one thing this must not do.
+type EvidenceBundle struct {
+	MarketID   string           `json:"marketId"`
+	ObserverID string           `json:"observerId"`
+	Root       *string          `json:"root"`
+	Recomputed string           `json:"recomputed"`
+	Samples    []EvidenceSample `json:"samples"`
 }
 
 // CountSample is one interval of counting behind a report.
@@ -135,6 +165,7 @@ type CountSample struct {
 	IntervalSeconds int     `json:"intervalSeconds"`
 	Quality         float64 `json:"streamQuality"`
 	ModelVersion    string  `json:"modelVersion"`
+	FrameDigest     string  `json:"frameDigest,omitempty"`
 }
 
 // Units name what a market counts. The category decides it, so a client never

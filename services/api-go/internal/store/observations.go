@@ -35,8 +35,8 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 		INSERT INTO observer_reports (
 			market_id, observer_id, role, observed_value, confidence, model_version,
 			uptime, maximum_timestamp_drift_ms, average_visibility,
-			longest_frozen_seconds, invalid_reasons, signature, recorded_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			longest_frozen_seconds, invalid_reasons, signature, evidence_root, recorded_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (market_id, observer_id) DO UPDATE SET
 			observed_value = EXCLUDED.observed_value,
 			-- Provenance has to move with the value. A report claiming a model
@@ -50,6 +50,7 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 			longest_frozen_seconds = EXCLUDED.longest_frozen_seconds,
 			invalid_reasons = EXCLUDED.invalid_reasons,
 			signature = EXCLUDED.signature,
+			evidence_root = EXCLUDED.evidence_root,
 			recorded_at = EXCLUDED.recorded_at
 		-- Observers retry inside a window, so a stream that drops out near the
 		-- end would otherwise replace a good count with an empty one. A clean
@@ -58,7 +59,7 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 		   OR cardinality(observer_reports.invalid_reasons) > 0`,
 		r.MarketID, r.ObserverID, r.Role, r.ObservedValue, r.Confidence, r.ModelVersion,
 		r.Uptime, r.DriftMS, r.Visibility, r.FrozenSeconds,
-		r.InvalidReasons, r.Signature, time.Now().UTC())
+		r.InvalidReasons, r.Signature, r.EvidenceRoot, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("save report: %w", err)
 	}
@@ -98,6 +99,40 @@ func (s *Postgres) SaveCounts(ctx context.Context, marketID, observerID string, 
 		pgx.CopyFromRows(rows))
 	if err != nil {
 		return fmt.Errorf("save counts: %w", err)
+	}
+
+	return s.saveSamples(ctx, marketID, observerID, counts)
+}
+
+// saveSamples keeps the same intervals a second time, in the order they were
+// hashed into the evidence root. The stream-level counts are a rolling record
+// and get compacted; a proof has to reproduce the exact leaves in the exact
+// positions, which means storing them against the market that committed to them.
+func (s *Postgres) saveSamples(ctx context.Context, marketID, observerID string, counts []domain.CountSample) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM observation_samples WHERE market_id = $1 AND observer_id = $2`,
+		marketID, observerID)
+	if err != nil {
+		return fmt.Errorf("clear samples: %w", err)
+	}
+
+	rows := make([][]any, len(counts))
+	for i, c := range counts {
+		at, err := time.Parse(time.RFC3339Nano, c.ObservedAt)
+		if err != nil {
+			return fmt.Errorf("bad timestamp %q: %w", c.ObservedAt, err)
+		}
+		rows[i] = []any{marketID, observerID, i, at, c.Count, c.IntervalSeconds,
+			c.Quality, c.ModelVersion, c.FrameDigest}
+	}
+
+	_, err = s.pool.CopyFrom(ctx,
+		pgx.Identifier{"observation_samples"},
+		[]string{"market_id", "observer_id", "leaf_index", "observed_at", "event_count",
+			"interval_seconds", "stream_quality", "model_version", "frame_digest"},
+		pgx.CopyFromRows(rows))
+	if err != nil {
+		return fmt.Errorf("save samples: %w", err)
 	}
 	return nil
 }

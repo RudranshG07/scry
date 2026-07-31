@@ -10,6 +10,7 @@ interface Vm {
     function startPrank(address sender) external;
     function stopPrank() external;
     function expectRevert(bytes4 selector) external;
+    function expectRevert(bytes calldata revertData) external;
     function addr(uint256 privateKey) external pure returns (address);
     function sign(uint256 privateKey, bytes32 digest)
         external

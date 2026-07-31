@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -84,17 +87,23 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 		return e.invalidate(ctx, id, len(counts))
 	}
 
+	root, err := e.evidenceRoot(ctx, id, value)
+	if err != nil {
+		return err
+	}
+
 	_, err = e.pool.Exec(ctx, `
 		UPDATE markets
 		SET status = 'Result proposed', observed_value = $2, winning_outcome_id = $3,
-		    challenge_ends_at = NOW() + $4::interval, updated_at = NOW()
+		    evidence_root = $5, challenge_ends_at = NOW() + $4::interval, updated_at = NOW()
 		WHERE id = $1 AND status = 'Observing'`,
-		id, value, outcome, challengeWindow.String())
+		id, value, outcome, challengeWindow.String(), root)
 	if err != nil {
 		return fmt.Errorf("propose result: %w", err)
 	}
 
-	e.log.Info("result proposed", "market", id, "value", value, "outcome", outcome, "observers", len(counts))
+	e.log.Info("result proposed", "market", id, "value", value, "outcome", outcome,
+		"observers", len(counts), "evidence", root)
 	e.notify(ctx, id, "Result proposed")
 	return nil
 }
@@ -109,6 +118,28 @@ func (e *Engine) invalidate(ctx context.Context, id string, reporting int) error
 	e.log.Warn("market invalidated", "market", id, "observers", reporting, "needed", minObservers)
 	e.notify(ctx, id, "Invalid")
 	return nil
+}
+
+// evidenceRoot picks the bundle belonging to an observer who actually reported
+// the settled value. Publishing the root of an observer who read something else
+// would point every later proof at intervals that do not add up to the result.
+// A result whose evidence cannot be identified is published without one rather
+// than with somebody else's.
+func (e *Engine) evidenceRoot(ctx context.Context, id string, value int64) (*string, error) {
+	var root *string
+	err := e.pool.QueryRow(ctx, `
+		SELECT evidence_root FROM observer_reports
+		WHERE market_id = $1 AND observed_value = $2
+		  AND cardinality(invalid_reasons) = 0 AND evidence_root IS NOT NULL
+		ORDER BY observer_id
+		LIMIT 1`, id, value).Scan(&root)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read evidence root: %w", err)
+	}
+	return root, nil
 }
 
 func (e *Engine) reportedCounts(ctx context.Context, id string) ([]int64, error) {

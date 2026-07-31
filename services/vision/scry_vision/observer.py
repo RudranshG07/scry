@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from .counter import CountLineTracker
+from .evidence import bundle, chain, digest, stamp
 from .health import Health, faults
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
 
@@ -144,6 +145,11 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
     started = datetime.now(UTC)
     previous: np.ndarray | None = None
 
+    # Chained across the whole window, so each interval's digest also commits
+    # to every frame before it. Seeded with the source and start time so a
+    # chain cannot be lifted from one observation onto another.
+    frames = digest(f"{url}|{started.isoformat()}".encode())
+
     misses = 0
     while datetime.now(UTC) < deadline:
         ok, frame = capture.read()
@@ -166,6 +172,7 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
         small = cv2.resize(frame, (width, height))
         grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         health.contrast.append(float(grey.std()))
+        frames = chain(frames, grey.tobytes())
 
         # An identical frame means the encoder is repeating itself.
         if previous is not None and np.array_equal(grey, previous):
@@ -189,11 +196,12 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
         elapsed_bucket = (now - bucket_started).total_seconds()
         if elapsed_bucket >= bucket_seconds:
             samples.append({
-                "observedAt": bucket_started.isoformat().replace("+00:00", "Z"),
+                "observedAt": stamp(bucket_started),
                 "count": counter.count - bucket_base,
                 "intervalSeconds": int(elapsed_bucket),
                 "streamQuality": round(health.visibility(), 4),
                 "modelVersion": profile.version,
+                "frameDigest": frames,
             })
             bucket_base = counter.count
             bucket_started = now
@@ -205,11 +213,12 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
     tail = (finished - bucket_started).total_seconds()
     if tail >= 1:
         samples.append({
-            "observedAt": bucket_started.isoformat().replace("+00:00", "Z"),
+            "observedAt": stamp(bucket_started),
             "count": counter.count - bucket_base,
             "intervalSeconds": int(tail),
             "streamQuality": round(health.visibility(), 4),
             "modelVersion": profile.version,
+            "frameDigest": frames,
         })
 
     return {
@@ -221,6 +230,7 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
         "frames": health.frames,
         "elapsed": round(elapsed, 1),
         "modelVersion": profile.version,
+        "evidenceRoot": bundle(samples)[0],
         "counts": samples,
     }
 

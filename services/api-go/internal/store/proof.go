@@ -47,10 +47,13 @@ func (s *Postgres) GetProof(ctx context.Context, id string) (domain.ProofOfObser
 
 func (s *Postgres) observers(ctx context.Context, id string) ([]domain.Observer, float64, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT observer_id, role, model_version, uptime, signature, invalid_reasons
-		FROM observer_reports
-		WHERE market_id = $1
-		ORDER BY role`, id)
+		SELECT r.observer_id, r.role, r.model_version, r.uptime, r.signature,
+		       r.invalid_reasons, r.evidence_root,
+		       (SELECT count(*) FROM observation_samples s
+		        WHERE s.market_id = r.market_id AND s.observer_id = r.observer_id)
+		FROM observer_reports r
+		WHERE r.market_id = $1
+		ORDER BY r.role`, id)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query observers: %w", err)
 	}
@@ -62,7 +65,8 @@ func (s *Postgres) observers(ctx context.Context, id string) ([]domain.Observer,
 		var o domain.Observer
 		var uptime float64
 		var bad []string
-		if err := rows.Scan(&o.ID, &o.Role, &o.ModelVersion, &uptime, &o.Signature, &bad); err != nil {
+		if err := rows.Scan(&o.ID, &o.Role, &o.ModelVersion, &uptime, &o.Signature, &bad,
+			&o.EvidenceRoot, &o.Samples); err != nil {
 			return nil, 0, fmt.Errorf("scan observers: %w", err)
 		}
 		o.Name = o.ID

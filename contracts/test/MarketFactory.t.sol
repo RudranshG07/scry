@@ -4,6 +4,7 @@ import {MarketFactory} from "../src/MarketFactory.sol";
 import {ObserverRegistry} from "../src/ObserverRegistry.sol";
 import {PooledMarket} from "../src/PooledMarket.sol";
 import {ScryTypes} from "../src/ScryTypes.sol";
+import {Deploy} from "../script/Deploy.s.sol";
 import {Fixtures, SilentUSDC, vm} from "./Harness.sol";
 
 contract MarketFactoryTest {
@@ -168,5 +169,25 @@ contract ObserverRegistryTest {
         r.setObserver(address(0xA1), true);
         r.setObserver(address(0xA1), true);
         require(r.activeCount() == 1, "counted once");
+    }
+}
+
+contract DeployTest {
+    Deploy d;
+
+    function testCollateralIsPinnedPerChain() public {
+        d = new Deploy();
+        // Polygon must resolve to bridged USDC.e, the token Polymarket settles
+        // in. Native USDC on Polygon is a different contract entirely.
+        require(d.collateralFor(137) == 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174, "polygon USDC.e");
+        require(d.collateralFor(8453) == 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, "base USDC");
+        require(d.collateralFor(137) != d.collateralFor(8453), "chains do not share a token");
+    }
+
+    function testAnUnknownChainIsRefusedRatherThanGuessed() public {
+        d = new Deploy();
+        // Escrowing a token nobody holds would not surface until withdrawal.
+        vm.expectRevert(abi.encodeWithSelector(Deploy.UnsupportedChain.selector, uint256(1)));
+        d.collateralFor(1);
     }
 }
