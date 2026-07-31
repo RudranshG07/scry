@@ -255,6 +255,7 @@ def submit(api: str, market: str, observer: str, role: str, result: dict) -> tup
         "averageVisibility": result.get("visibility", 0.0),
         "longestFrozenSeconds": result.get("frozenSeconds", 0.0),
         "invalidReasons": reasons,
+        "evidenceRoot": result.get("evidenceRoot") or None,
         "counts": result.get("counts", []),
     }).encode()
 

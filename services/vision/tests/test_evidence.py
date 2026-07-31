@@ -124,6 +124,18 @@ class StampTest(unittest.TestCase):
         b = stamp(datetime(2026, 7, 31, 6, 0, 0, 123456, tzinfo=UTC))
         self.assertEqual(len(a), len(b))
 
+class WireTest(unittest.TestCase):
+    def test_the_root_survives_into_the_submitted_body(self):
+        """observe() computing a root is not the same as the API receiving one.
+        submit() builds an explicit body, so a new field is silently dropped
+        unless it is added there too."""
+        # Read as text rather than import: observer.py needs OpenCV, which CI
+        # does not have, and this check is about the wire format not the model.
+        import pathlib
+        source = pathlib.Path(__file__).resolve().parents[1] / "scry_vision" / "observer.py"
+        body = source.read_text().split("def submit(")[1]
+        self.assertIn("evidenceRoot", body)
+
 
 if __name__ == "__main__":
     unittest.main()

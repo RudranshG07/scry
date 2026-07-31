@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -27,14 +28,25 @@ type Server struct {
 	store         store.Store
 	issuer        PlaybackTokenIssuer
 	allowedOrigin string
+	domain        string
+	secureCookies bool
+	log           *slog.Logger
 }
 
 func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Server {
+	origin := strings.TrimSuffix(allowedOrigin, "/")
 	server := &Server{
 		mux:           http.NewServeMux(),
 		store:         data,
 		issuer:        issuer,
-		allowedOrigin: strings.TrimSuffix(allowedOrigin, "/"),
+		allowedOrigin: origin,
+		// The domain in a sign-in message has to be the site the user is actually
+		// on, or the check that a signature was meant for us proves nothing.
+		domain: hostOf(origin),
+		// A session cookie sent in the clear is a session anyone on the path can
+		// take, but localhost has no certificate to offer.
+		secureCookies: strings.HasPrefix(origin, "https://"),
+		log:           slog.Default(),
 	}
 	server.routes()
 	return server
@@ -45,6 +57,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /v1/markets", server.listMarkets)
 	server.mux.HandleFunc("GET /v1/markets/{id}", server.getMarket)
 	server.mux.HandleFunc("GET /v1/markets/{id}/proof", server.getProof)
+	server.mux.HandleFunc("GET /v1/markets/{id}/evidence/{observer}", server.getEvidence)
 	server.mux.HandleFunc("GET /v1/portfolio/{address}", server.getPortfolio)
 	server.mux.HandleFunc("GET /v1/leaderboard", server.getLeaderboard)
 	server.mux.HandleFunc("GET /v1/markets/{id}/messages", server.getMessages)
@@ -53,6 +66,10 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("GET /v1/streams/{id}/playback-token", server.getPlaybackToken)
 	server.mux.HandleFunc("GET /v1/markets/{id}/stream", server.marketStream)
 	server.mux.HandleFunc("POST /v1/markets/{id}/observations", server.postObservation)
+	server.mux.HandleFunc("POST /v1/auth/nonce", server.postNonce)
+	server.mux.HandleFunc("POST /v1/auth/session", server.postSession)
+	server.mux.HandleFunc("GET /v1/auth/session", server.getSession)
+	server.mux.HandleFunc("DELETE /v1/auth/session", server.deleteSession)
 }
 
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -109,6 +126,20 @@ func (server *Server) getProof(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	writeJSON(writer, http.StatusOK, proof)
+}
+
+func (server *Server) getEvidence(writer http.ResponseWriter, request *http.Request) {
+	bundle, err := server.store.GetEvidence(request.Context(),
+		request.PathValue("id"), request.PathValue("observer"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(writer, http.StatusNotFound, "evidence_not_found", "No evidence bundle for this observer.")
+		return
+	}
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "evidence_store_unavailable", "Evidence is temporarily unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, bundle)
 }
 
 func (server *Server) getPortfolio(writer http.ResponseWriter, request *http.Request) {
@@ -214,4 +245,14 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 
 func writeError(writer http.ResponseWriter, status int, code string, message string) {
 	writeJSON(writer, status, map[string]string{"code": code, "error": message})
+}
+
+// hostOf strips scheme and port so the sign-in domain matches what a wallet
+// shows the user.
+func hostOf(origin string) string {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
+	if host, _, found := strings.Cut(trimmed, ":"); found {
+		return host
+	}
+	return trimmed
 }

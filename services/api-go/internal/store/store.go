@@ -14,6 +14,7 @@ type Store interface {
 	ListMarkets(context.Context) ([]domain.Market, error)
 	GetMarket(context.Context, string) (domain.Market, error)
 	GetProof(context.Context, string) (domain.ProofOfObservation, error)
+	GetEvidence(context.Context, string, string) (domain.EvidenceBundle, error)
 	GetPortfolio(context.Context, string) (domain.Portfolio, error)
 	GetLeaderboard(context.Context) ([]domain.LeaderboardEntry, error)
 	GetMessages(context.Context, string) ([]domain.RoomMessage, error)
@@ -64,6 +65,12 @@ func (memory *Memory) GetProof(_ context.Context, marketID string) (domain.Proof
 		return domain.ProofOfObservation{}, ErrNotFound
 	}
 	return proof, nil
+}
+
+// The in-memory store backs the simulator, which has no real footage behind it.
+// Returning a made-up bundle would put a root on screen that proves nothing.
+func (memory *Memory) GetEvidence(_ context.Context, _, _ string) (domain.EvidenceBundle, error) {
+	return domain.EvidenceBundle{}, ErrNotFound
 }
 
 func (memory *Memory) GetPortfolio(_ context.Context, address string) (domain.Portfolio, error) {
