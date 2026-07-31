@@ -2,6 +2,7 @@ import unittest
 
 from datetime import UTC, datetime, timedelta
 
+from scry_vision.calibrate import spread, summarise
 from scry_vision.worker import JOIN_GRACE, StreamMismatch, at, guard, pick, slot
 
 
@@ -97,3 +98,40 @@ class CoverageTest(unittest.TestCase):
         m = self.slot_for(15)
         _, closes = slot(m, 3600)
         self.assertEqual(closes, at(m, "observationEndsAt"))
+
+
+class SpreadTest(unittest.TestCase):
+    def test_spread_is_measured_against_the_lower_count(self):
+        self.assertAlmostEqual(spread(100, 110), 10.0)
+        self.assertAlmostEqual(spread(110, 100), 10.0)
+
+    def test_identical_counts_do_not_disagree(self):
+        self.assertEqual(spread(42, 42), 0.0)
+
+    def test_zero_counts_do_not_divide(self):
+        self.assertEqual(spread(0, 0), 0.0)
+
+
+class SummariseTest(unittest.TestCase):
+    def summary(self, gaps):
+        return summarise([{"ok": True, "spread": g} for g in gaps])
+
+    def test_reports_the_shape_not_just_the_mean(self):
+        s = self.summary([5.3, 11.6, 4.0, 14.5])
+        self.assertEqual(s["windows"], 4)
+        self.assertEqual(s["best"], 4.0)
+        self.assertEqual(s["worst"], 14.5)
+        self.assertIsNotNone(s["stdev"])
+
+    def test_a_single_window_reports_no_stdev_rather_than_zero(self):
+        # One window looks perfectly consistent, which is exactly the false
+        # confidence this tool exists to prevent.
+        self.assertIsNone(self.summary([7.0])["stdev"])
+
+    def test_failed_windows_are_counted_not_averaged_in(self):
+        s = summarise([{"ok": True, "spread": 4.0}, {"ok": False, "reason": "no frames"}])
+        self.assertEqual(s["windows"], 1)
+        self.assertEqual(s["failed"], 1)
+
+    def test_no_usable_windows_is_reported_as_none(self):
+        self.assertEqual(summarise([{"ok": False, "reason": "x"}])["windows"], 0)

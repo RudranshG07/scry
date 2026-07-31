@@ -19,6 +19,10 @@ const (
 	toleranceFloor = 2
 	// How long anyone has to challenge a proposed result.
 	challengeWindow = 10 * time.Minute
+	// An observer covers the window to its last second, so its report is only
+	// ever in flight once the window has closed. Resolving the moment the clock
+	// runs out would throw away every report that did its job properly.
+	reportGrace = 60 * time.Second
 )
 
 type band struct {
@@ -32,7 +36,8 @@ type band struct {
 func (e *Engine) propose(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT id FROM markets
-		WHERE status = 'Observing' AND observation_ends_at <= NOW()`)
+		WHERE status = 'Observing' AND observation_ends_at <= NOW() - $1::interval`,
+		reportGrace.String())
 	if err != nil {
 		return fmt.Errorf("find ended observations: %w", err)
 	}
