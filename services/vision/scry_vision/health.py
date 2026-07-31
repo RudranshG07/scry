@@ -32,9 +32,15 @@ class Health:
     longest_frozen: int = 0
     contrast: list[float] = field(default_factory=list)
 
-    def uptime(self, fps: float) -> float:
-        total = self.frames + self.dropped
-        return self.frames / total if total else 0.0
+    def uptime(self, expected: float) -> float:
+        """Share of the window actually covered.
+
+        Measured against the frames the window should have produced, not against
+        read attempts: a dead capture fails instantly and would otherwise rack
+        up thousands of attempts, reporting a stream that delivered nothing as
+        though it had merely been unlucky.
+        """
+        return min(1.0, self.frames / expected) if expected else 0.0
 
     def visibility(self) -> float:
         if not self.contrast:

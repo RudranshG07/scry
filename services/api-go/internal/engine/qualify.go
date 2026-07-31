@@ -29,6 +29,9 @@ type window struct{ lo, hi int64 }
 // observers watching it could actually agree, which is the thing a result
 // rests on. A stream that fails is suspended and stops being scheduled.
 func (e *Engine) qualify(ctx context.Context) error {
+	if err := e.unsourced(ctx); err != nil {
+		return err
+	}
 	if err := e.reinstate(ctx); err != nil {
 		return err
 	}
@@ -113,6 +116,31 @@ func verdict(ws []window) (string, int, bool) {
 		return "Suspended", agreed, true
 	}
 	return "Qualified", agreed, true
+}
+
+// unsourced sends streams with no playback source back to Candidate. Qualified
+// is a claim that a stream is fit to host markets, and one nobody can watch is
+// not: the scheduler already skips it, so it would sit there qualified forever
+// and never publish anything.
+func (e *Engine) unsourced(ctx context.Context) error {
+	rows, err := e.pool.Query(ctx, `
+		UPDATE streams SET status = 'Candidate', updated_at = NOW()
+		WHERE status IN ('Qualified', 'Suspended')
+		  AND coalesce(btrim(public_playback_id), '') = ''
+		RETURNING id`)
+	if err != nil {
+		return fmt.Errorf("demote unsourced streams: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		e.log.Warn("stream has no playback source", "stream", id, "status", "Candidate")
+	}
+	return rows.Err()
 }
 
 // reinstate gives a suspended stream another chance once probation is up. It

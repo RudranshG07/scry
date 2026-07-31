@@ -8,9 +8,10 @@ could be running anywhere.
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from math import hypot
 
 import cv2
@@ -24,6 +25,9 @@ from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSam
 MAX_DRIFT = 70
 # Frames a track survives without a match before it is dropped.
 MAX_MISSES = 8
+# Consecutive failed reads that mean the capture is gone rather than stuttering.
+RECONNECT_AFTER = 30
+RECONNECT_PAUSE = 2.0
 
 
 @dataclass(frozen=True)
@@ -120,7 +124,11 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
         return {"ok": False, "reason": "stream_unreachable"}
 
     fps = capture.get(cv2.CAP_PROP_FPS) or 15.0
-    budget = int(seconds * fps)
+    # The window is a stretch of time, not a number of frames. Counting frames
+    # instead lets two observers on the same market cover different stretches of
+    # road, and the traffic between them reads as disagreement.
+    deadline = datetime.now(UTC) + timedelta(seconds=seconds)
+    expected = seconds * fps
 
     background = cv2.createBackgroundSubtractorMOG2(
         history=profile.history, varThreshold=profile.var_threshold, detectShadows=True)
@@ -136,12 +144,24 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
     started = datetime.now(UTC)
     previous: np.ndarray | None = None
 
-    for _ in range(budget):
+    misses = 0
+    while datetime.now(UTC) < deadline:
         ok, frame = capture.read()
         if not ok:
             health.dropped += 1
+            misses += 1
+            # These feeds arrive with barely more throughput than their bitrate,
+            # so a long read falls behind and the capture gives up partway. Take
+            # a fresh one and keep counting rather than abandon the window.
+            if misses >= RECONNECT_AFTER:
+                capture.release()
+                capture = cv2.VideoCapture(url)
+                misses = 0
+                if not capture.isOpened():
+                    time.sleep(RECONNECT_PAUSE)
             continue
 
+        misses = 0
         health.frames += 1
         small = cv2.resize(frame, (width, height))
         grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
@@ -195,7 +215,7 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
     return {
         "ok": health.frames > 0,
         "count": counter.count,
-        "uptime": round(health.uptime(fps), 4),
+        "uptime": round(health.uptime(expected), 4),
         "visibility": round(health.visibility(), 4),
         "frozenSeconds": round(health.longest_frozen / fps, 2),
         "frames": health.frames,

@@ -38,12 +38,20 @@ class VisibilityTest(unittest.TestCase):
 
 
 class UptimeTest(unittest.TestCase):
-    def test_dropped_frames_count_against_uptime(self):
-        self.assertAlmostEqual(Health(frames=90, dropped=10).uptime(30), 0.9)
+    def test_uptime_is_share_of_the_window_covered(self):
+        self.assertAlmostEqual(Health(frames=90).uptime(100), 0.9)
 
-    def test_a_stream_that_dropped_frames_cannot_settle_a_market(self):
-        h = seen(60.0, frames=90, dropped=10)
-        self.assertIn("uptime_below_minimum", faults(True, h.uptime(30), h.visibility()))
+    def test_a_stream_that_missed_frames_cannot_settle_a_market(self):
+        h = seen(60.0, frames=90)
+        self.assertIn("uptime_below_minimum", faults(True, h.uptime(100), h.visibility()))
+
+    def test_a_dead_capture_is_not_flattered_by_its_retries(self):
+        # Thousands of instant failures, no frames: covering none of the window
+        # has to read as zero rather than as a near miss.
+        self.assertEqual(Health(frames=0, dropped=9000).uptime(100), 0.0)
+
+    def test_a_full_window_passes(self):
+        self.assertEqual(faults(True, Health(frames=100).uptime(100), 1.0), [])
 
     def test_unavailable_evidence_is_reported_even_on_clean_footage(self):
         self.assertIn("evidence_unavailable", faults(False, 1.0, 1.0))
