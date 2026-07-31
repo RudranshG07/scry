@@ -49,3 +49,7 @@ Thumbs.db
 
 # agent instructions
 CLAUDE.md
+
+# notes, plans and write-ups stay local
+*.md
+*.mdx
