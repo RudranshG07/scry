@@ -1,11 +1,13 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+
+import { usePosition } from "@/hooks/use-position";
 import { useExperience } from "@/components/experience-provider";
 import { useToast } from "@/components/ui/toast";
 import { useWallet } from "@/components/wallet-provider";
 import type { Market } from "@/lib/domain";
-import { formatCompactUsd, formatMultiplier, formatUsdc } from "@/lib/format";
+import { formatCompactUsd, formatHash, formatMultiplier, formatUsdc } from "@/lib/format";
 import { forecasterConsensusFor } from "@/lib/simulation";
 import { countdownFor, marketPhase } from "@/lib/time";
 
@@ -32,6 +34,7 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
   const [confidence, setConfidence] = useState("60");
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
+  const position = usePosition(market);
 
   const phase = marketPhase(market, now);
   const isOpen = phase.status === "Open";
@@ -77,13 +80,24 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
       return;
     }
 
+    if (!position.settles) {
+      setState("error");
+      setMessage("This market has no contract yet, so a position would move nothing.");
+      notify({ title: "Not deployed", body: "This market is not on chain yet. No funds moved.", tone: "info" });
+      return;
+    }
+
+    if (!wallet.signedInAs) {
+      setState("error");
+      setMessage("Sign in with your wallet first so this position is tied to you.");
+      return;
+    }
+
     setState("submitting");
     setMessage("");
-    window.setTimeout(() => {
-      setState("success");
-      setMessage("Preview ready. Settlement connects when contracts are deployed.");
-      notify({ title: "Position preview ready", body: "No funds moved — contracts are not deployed.", tone: "info" });
-    }, 700);
+    void position.take(selected.id, stake).then(() => {
+      setState("idle");
+    });
   }
 
   return (
@@ -203,7 +217,15 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
           </fieldset>
 
           <button className="button-primary mt-5 w-full" type="submit" disabled={disabled} aria-busy={state === "submitting"}>
-            {state === "submitting" ? "Preparing" : mode === "forecast" ? "Save forecast" : "Review position"}
+            {position.state.stage === "approving"
+              ? "Approving USDC"
+              : position.state.stage === "depositing"
+                ? "Confirm in wallet"
+                : mode === "forecast"
+                  ? "Save forecast"
+                  : position.settles
+                    ? "Take position"
+                    : "Not deployed yet"}
           </button>
 
           {!isOpen && (
@@ -216,9 +238,17 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
               {isCoolingOff ? "Cool-off active. Free forecasting stays available." : "Positions disabled by your daily limit."}
             </p>
           )}
-          {message && (
-            <p className={`mt-4 text-xs leading-5 ${state === "error" ? "text-danger" : "text-accent"}`} role={state === "error" ? "alert" : "status"}>
-              {message}
+          {(message || position.state.message) && (
+            <p
+              className={`mt-4 text-xs leading-5 ${state === "error" || position.state.stage === "failed" ? "text-danger" : "text-accent"}`}
+              role={state === "error" || position.state.stage === "failed" ? "alert" : "status"}
+            >
+              {position.state.message || message}
+            </p>
+          )}
+          {position.state.depositHash && (
+            <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+              {formatHash(position.state.depositHash)}
             </p>
           )}
         </form>

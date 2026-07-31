@@ -17,6 +17,17 @@ export type MarketQuery = {
   signal?: AbortSignal;
 };
 
+export type SignInChallenge = {
+  nonce: string;
+  issuedAt: string;
+  message: string;
+};
+
+export type Session = {
+  address: `0x${string}`;
+  expiresAt: string;
+};
+
 export type MarketSubscription = {
   onEvent: (event: MarketUpdate) => void;
   onError: (error: Error) => void;
@@ -32,6 +43,10 @@ export interface ScryApi {
   postRoomMessage(marketId: string, message: CreateRoomMessage, signal?: AbortSignal): Promise<RoomMessage>;
   getNotifications(address?: `0x${string}`, signal?: AbortSignal): Promise<ScryNotification[]>;
   subscribeToMarket(marketId: string, subscription: MarketSubscription): () => void;
+  startSignIn(address: `0x${string}`): Promise<SignInChallenge>;
+  completeSignIn(address: `0x${string}`, message: string, signature: string): Promise<Session>;
+  currentSession(signal?: AbortSignal): Promise<Session | null>;
+  signOut(): Promise<void>;
 }
 
 export class ScryApiError extends Error {

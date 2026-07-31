@@ -49,7 +49,9 @@ services:
   # depends on a third-party CDN being reachable. Set SCRY_MEDIA_ORIGIN to
   # http://127.0.0.1:8888 to make the stream resolver prefer it.
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    # The plain image is built from scratch and carries no CA bundle, so every
+    # https source fails certificate verification. This variant has one.
+    image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
     ports:
       - 127.0.0.1:${SCRY_HLS_PORT:-8888}:8888

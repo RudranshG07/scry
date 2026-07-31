@@ -10,20 +10,25 @@ type MarketOutcome struct {
 }
 
 type Market struct {
-	ID                  string          `json:"id"`
-	StreamID            string          `json:"streamId"`
-	Category            string          `json:"category"`
-	Unit                string          `json:"unit"`
-	Location            string          `json:"location"`
-	City                string          `json:"city"`
-	Question            string          `json:"question"`
-	Status              string          `json:"status"`
-	Countdown           string          `json:"countdown"`
-	Pool                float64         `json:"pool"`
-	Forecast            float64         `json:"forecast"`
-	CurrentRate         float64         `json:"currentRate"`
-	Baseline            float64         `json:"baseline"`
-	Observers           int             `json:"observers"`
+	ID          string  `json:"id"`
+	StreamID    string  `json:"streamId"`
+	Category    string  `json:"category"`
+	Unit        string  `json:"unit"`
+	Location    string  `json:"location"`
+	City        string  `json:"city"`
+	Question    string  `json:"question"`
+	Status      string  `json:"status"`
+	Countdown   string  `json:"countdown"`
+	Pool        float64 `json:"pool"`
+	Forecast    float64 `json:"forecast"`
+	CurrentRate float64 `json:"currentRate"`
+	Baseline    float64 `json:"baseline"`
+	Observers   int     `json:"observers"`
+	ChainID     int64   `json:"chainId"`
+	// Nil until the market has been deployed. Positions are only real once there
+	// is a contract holding the collateral, so the client uses this to tell a
+	// live market from one that exists in the database alone.
+	ContractAddress     *string         `json:"contractAddress,omitempty"`
 	OpensAt             string          `json:"opensAt"`
 	LocksAt             string          `json:"locksAt"`
 	ObservationStartsAt string          `json:"observationStartsAt"`

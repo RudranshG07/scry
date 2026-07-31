@@ -9,6 +9,7 @@ import type {
   RoomMessage,
   ScryNotification,
 } from "@/lib/domain";
+import { ScryApiError } from "@/lib/api/contract";
 import { marketSeeds, marketUnit } from "@/lib/markets";
 import { findMarketAt, listMarketsAt, liveCountFor, proofFor } from "@/lib/simulation";
 import { marketPhase } from "@/lib/time";
@@ -283,4 +284,21 @@ export class MockScryApi implements ScryApi {
     const timer = window.setInterval(emit, 2000);
     return () => window.clearInterval(timer);
   }
+
+  // The mock backs the simulator, where there is no server to prove anything to.
+  // Refusing is honest; pretending to sign someone in would put an address on
+  // screen that nothing ever verified.
+  async startSignIn(): Promise<never> {
+    throw new ScryApiError("Sign-in needs the live API.", 501);
+  }
+
+  async completeSignIn(): Promise<never> {
+    throw new ScryApiError("Sign-in needs the live API.", 501);
+  }
+
+  async currentSession() {
+    return null;
+  }
+
+  async signOut() {}
 }

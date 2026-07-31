@@ -134,7 +134,12 @@ def main() -> int:
     parser.add_argument("--api", default="http://127.0.0.1:8080")
     parser.add_argument("--stream", required=True,
                         help="stream id this camera belongs to; markets on any other stream are ignored")
-    parser.add_argument("--camera", required=True, help="HLS url to watch")
+    parser.add_argument("--camera", help="HLS url to watch; omit when using --relay")
+    parser.add_argument("--relay",
+                        help="origin of the shared ingest, e.g. http://127.0.0.1:8888. "
+                             "Observers on one stream then read identical frames, so a "
+                             "difference in their counts is the detector rather than the "
+                             "network dealing them different footage")
     parser.add_argument("--market", help="observe one market then exit")
     parser.add_argument("--observer", default="vision-01")
     parser.add_argument("--role", default="primary_vision",
@@ -146,8 +151,14 @@ def main() -> int:
     parser.add_argument("--poll", type=float, default=15)
     args = parser.parse_args()
 
+    camera = args.camera
+    if args.relay:
+        camera = f"{args.relay.rstrip('/')}/{args.stream}/index.m3u8"
+    if not camera:
+        parser.error("give either --camera or --relay")
+
     try:
-        return run(args.api, args.stream, args.camera, args.market, args.observer,
+        return run(args.api, args.stream, camera, args.market, args.observer,
                    args.role, args.max_seconds, args.poll)
     except StreamMismatch as error:
         print(f"refusing to report: {error}", file=sys.stderr)

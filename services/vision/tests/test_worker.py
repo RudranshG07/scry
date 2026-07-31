@@ -44,11 +44,6 @@ class GuardTest(unittest.TestCase):
     def test_allows_a_market_on_its_own_stream(self):
         guard(market("sd-1", "stream-sd-5-28th"), "stream-sd-5-28th")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SlotTest(unittest.TestCase):
     """Two counts are only comparable if they cover the same seconds. The slot
     comes from the market so every observer computes the same one."""
@@ -135,3 +130,25 @@ class SummariseTest(unittest.TestCase):
 
     def test_no_usable_windows_is_reported_as_none(self):
         self.assertEqual(summarise([{"ok": False, "reason": "x"}])["windows"], 0)
+
+
+class RelayTest(unittest.TestCase):
+    """Observers on one stream must read the same frames. Deriving the url from
+    the stream id means two of them cannot end up on different sources."""
+
+    def url(self, relay, stream):
+        return f"{relay.rstrip('/')}/{stream}/index.m3u8"
+
+    def test_both_observers_derive_the_same_relay_url(self):
+        a = self.url("http://127.0.0.1:8888", "stream-sd-8-15")
+        b = self.url("http://127.0.0.1:8888/", "stream-sd-8-15")
+        self.assertEqual(a, b)
+        self.assertEqual(a, "http://127.0.0.1:8888/stream-sd-8-15/index.m3u8")
+
+    def test_each_stream_gets_its_own_path(self):
+        relay = "http://127.0.0.1:8888"
+        self.assertNotEqual(self.url(relay, "stream-sd-8-15"), self.url(relay, "stream-sd-5-28th"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -103,6 +103,7 @@ export function materializeMarket(seed: MarketSeed, now: number): Market {
     currentRate: seed.baseline * seed.rateBias,
     baseline: seed.baseline,
     observers: seed.observers,
+    chainId: 8453,
     opensAt: new Date(opensAt).toISOString(),
     locksAt: new Date(locksAt).toISOString(),
     observationStartsAt: new Date(observationStartsAt).toISOString(),

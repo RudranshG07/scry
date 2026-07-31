@@ -16,20 +16,43 @@ srt: no
 api: yes
 apiAddress: :9997
 
-# One path per market id. The browser only ever requests
-# <origin>/<marketId>/index.m3u8, so a source failing, changing or being
-# replaced never reaches the client — mediamtx reconnects behind the path.
+# The API and the streams are bound to loopback by compose, so the only callers
+# are on this machine. Naming the permissions explicitly is still required: with
+# no user configured, mediamtx refuses every request including its own health
+# check, and the container reports unhealthy while working fine.
+authMethod: internal
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: api
+      - action: read
+      - action: publish
+      - action: metrics
+
+# One path per stream, pulled once and shared.
+#
+# Two observers reading the same camera directly open two connections to it and
+# each get a different, partial set of frames: measured at 10491 against 5841 over
+# the same 893 seconds. They were not disagreeing about traffic, they were
+# watching different traffic. Counting the same relayed frames removes that, and
+# leaves any remaining disagreement where it belongs — in the detector.
+#
+# sourceOnDemand stays off for these. On demand, the pull starts when a client
+# arrives and stops when it leaves, so every observation window would begin with
+# a cold connection during the seconds that matter most.
 pathDefaults:
-  sourceOnDemand: yes
+  sourceOnDemand: no
+  # Caltrans drops roughly one segment fetch in three from here. Reconnecting is
+  # the normal case rather than an error, so it retries quickly and quietly.
   sourceOnDemandStartTimeout: 15s
   sourceOnDemandCloseAfter: 60s
 
 paths:
-  long-beach-710:
-    source: https://wzmedia.dot.ca.gov/D7/CCTV-262.stream/playlist.m3u8
-
-  los-angeles-405:
+  stream-sd-5-28th:
     source: https://wzmedia.dot.ca.gov/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8
 
-  santa-monica-10:
+  stream-sd-8-taylor:
     source: https://wzmedia.dot.ca.gov/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8
+
+  stream-sd-8-15:
+    source: https://wzmedia.dot.ca.gov/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8

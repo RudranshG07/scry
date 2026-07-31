@@ -2,6 +2,9 @@
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
+import { scryApi } from "@/lib/api";
+import { toSignableHex } from "@/lib/chain";
+
 type HexAddress = `0x${string}`;
 type WalletStatus = "checking" | "unavailable" | "disconnected" | "connecting" | "wrong-network" | "connected" | "error";
 
@@ -28,6 +31,10 @@ type WalletContextValue = {
   error: string | null;
   isConnected: boolean;
   connect: () => Promise<void>;
+  signedInAs: HexAddress | null;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+  provider: () => EthereumProvider | null;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -69,6 +76,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<HexAddress | null>(null);
   const [status, setStatus] = useState<WalletStatus>("checking");
   const [error, setError] = useState<string | null>(null);
+  const [signedInAs, setSignedInAs] = useState<HexAddress | null>(null);
 
   const syncWallet = useCallback(async () => {
     const provider = window.ethereum;
@@ -134,9 +142,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signIn = useCallback(async () => {
+    const provider = window.ethereum;
+    if (!provider || !address) return;
+
+    // The server writes the message; the wallet only signs it. A client-composed
+    // message means signing whatever the page decided to put in front of you.
+    const challenge = await scryApi.startSignIn(address);
+    const signature = await provider.request<string>({
+      method: "personal_sign",
+      params: [toSignableHex(challenge.message), address],
+    });
+    const session = await scryApi.completeSignIn(address, challenge.message, signature);
+    setSignedInAs(session.address as HexAddress);
+  }, [address]);
+
+  const signOut = useCallback(async () => {
+    await scryApi.signOut();
+    setSignedInAs(null);
+  }, []);
+
   const value = useMemo<WalletContextValue>(
-    () => ({ address, status, error, isConnected: status === "connected" && address !== null, connect }),
-    [address, status, error, connect],
+    () => ({
+      address,
+      status,
+      error,
+      isConnected: status === "connected" && address !== null,
+      connect,
+      signedInAs,
+      signIn,
+      signOut,
+      provider: () => window.ethereum ?? null,
+    }),
+    [address, status, error, connect, signedInAs, signIn, signOut],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
