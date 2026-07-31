@@ -26,6 +26,8 @@ contract PooledMarket is IPooledMarket {
     uint256 public observedValue;
     bytes32 public evidenceRoot;
     uint256 public totalPool;
+    uint256 public sponsorPool;
+    address public sponsor;
 
     bytes32[] private _outcomeIds;
     mapping(bytes32 => bool) private _isOutcome;
@@ -36,6 +38,8 @@ contract PooledMarket is IPooledMarket {
 
     error InvalidConfiguration();
     error NotResolver();
+    error NotFactory();
+    error NotSponsor();
     error WrongStatus();
     error UnknownOutcome();
     error ZeroAmount();
@@ -91,6 +95,35 @@ contract PooledMarket is IPooledMarket {
         totalPool += amount;
 
         emit PositionDeposited(msg.sender, outcomeId, amount);
+    }
+
+    /// @notice Records collateral the factory has already sent as seed liquidity.
+    /// It joins the pool the winners divide, so the first person in is not
+    /// staking into an empty book, but it belongs to no outcome and so can never
+    /// be claimed directly. If the market voids, the sponsor takes it back.
+    function seed(address sponsor_, uint256 amount) external {
+        if (msg.sender != factory) revert NotFactory();
+        if (_status != ScryTypes.MarketStatus.Open) revert WrongStatus();
+        if (sponsor_ == address(0) || amount == 0) revert InvalidConfiguration();
+
+        sponsor = sponsor_;
+        sponsorPool = amount;
+        totalPool += amount;
+    }
+
+    /// @notice Returns the seed once a market has voided. Stakes are refunded
+    /// one by one and the seed backs no stake, so without this it would sit in
+    /// the contract belonging to nobody.
+    function reclaimSeed() external returns (uint256 amount) {
+        if (_status != ScryTypes.MarketStatus.Invalid) revert WrongStatus();
+        if (msg.sender != sponsor) revert NotSponsor();
+
+        amount = sponsorPool;
+        if (amount == 0) revert NothingToClaim();
+
+        sponsorPool = 0;
+        collateral.send(sponsor, amount);
+        emit Refunded(sponsor, amount);
     }
 
     function lock() external override {
