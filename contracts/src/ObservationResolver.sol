@@ -7,15 +7,10 @@ import {ScryTypes} from "./ScryTypes.sol";
 
 /// @notice Carries a result from the observers to the market it settles.
 ///
-/// A proposal is accepted only with enough signatures from distinct registered
-/// observers over the exact result, and the result has to name the rule hash the
-/// market was built with. That pairing is the point: it stops a valid reading of
-/// one market being replayed against another, the same class of mistake as an
-/// observer reporting a count for a camera it never watched.
-///
-/// Nothing pays out until the challenge window closes. Anyone may challenge, and
-/// a challenged market is voided rather than argued over: the honest answer to a
-/// disputed reading is a refund, not a verdict this contract could reach.
+/// A proposal needs enough signatures from distinct registered observers over
+/// the exact result, and the result must name the market's rule hash, so a valid
+/// reading of one market cannot be replayed against another. A challenged market
+/// is voided rather than argued over.
 contract ObservationResolver is IObservationResolver {
     address public immutable admin;
     address public immutable observerRegistry;
@@ -67,8 +62,6 @@ contract ObservationResolver is IObservationResolver {
     {
         if (_proposals[market].exists) revert AlreadyProposed();
         if (result.invalid) revert ResultMarkedInvalid();
-        // The signatures authorise a reading of this market under this rule.
-        // Without both bindings a result could be lifted onto another market.
         if (result.ruleHash != IPooledMarket(market).ruleHash()) revert RuleMismatch();
 
         _verify(result, signatures);
@@ -93,8 +86,6 @@ contract ObservationResolver is IObservationResolver {
         p.status = ScryTypes.ObservationStatus.Challenged;
         emit ObservationChallenged(market, msg.sender, reason);
 
-        // A disputed reading is not a reading. Void and refund rather than leave
-        // stake riding on a number somebody has already objected to.
         IPooledMarket(market).invalidate(reason);
         emit ObservationInvalidated(market, reason);
     }
@@ -151,8 +142,7 @@ contract ObservationResolver is IObservationResolver {
 
         for (uint256 i = 0; i < signatures.length; i++) {
             address signer = _recover(hash, signatures[i]);
-            // Ascending order forces distinct signers without a nested loop, so
-            // one observer cannot sign twice to reach quorum on its own.
+            // Ascending order forces distinct signers without a nested loop.
             if (signer <= previous) revert SignaturesOutOfOrder();
             if (!IObserverRegistry(observerRegistry).isObserver(signer)) revert NotAnObserver();
             previous = signer;
@@ -166,9 +156,8 @@ contract ObservationResolver is IObservationResolver {
         bytes32 s = bytes32(signature[32:64]);
         uint8 v = uint8(signature[64]);
 
-        // Both halves of the curve recover the same signer, so accepting the
-        // upper half would let one signature be reshaped into a second that
-        // looks distinct and counts twice toward the threshold.
+        // Both halves recover the same signer, so one signature could otherwise
+        // be reshaped into a second that counts twice.
         if (uint256(s) > HALF_ORDER) revert NotAnObserver();
 
         address signer = ecrecover(hash, v, r, s);

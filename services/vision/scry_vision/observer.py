@@ -1,13 +1,12 @@
-"""Counts vehicles crossing a line on a live stream and reports the total.
+"""Counts crossings on a live stream and submits the total over HTTP.
 
-The observer never touches the database. It watches, counts, and submits a
-report over HTTP, because observers are meant to be independent processes that
-could be running anywhere.
+Never touches the database; observers are independent processes.
 """
 
 from __future__ import annotations
 
 import json
+import statistics
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -20,24 +19,19 @@ import numpy as np
 from .counter import CountLineTracker
 from .evidence import bundle, chain, digest, stamp
 from .health import Health, faults
+from .occupancy import occupancy_for
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
 
-# How far a centroid may move between frames and still be the same vehicle.
 MAX_DRIFT = 70
-# Frames a track survives without a match before it is dropped.
 MAX_MISSES = 8
-# Consecutive failed reads that mean the capture is gone rather than stuttering.
 RECONNECT_AFTER = 30
 RECONNECT_PAUSE = 2.0
 
 
 @dataclass(frozen=True)
 class Profile:
-    """Detector settings. Two observers watching the same camera with the same
-    settings will agree even when both are wrong, so the verification observer
-    runs a deliberately different configuration. Disagreement between profiles
-    is a signal that the scene is hard to read, which is what consensus is for.
-    """
+    """Two observers with identical settings agree even when both are wrong, so
+    the verification profile is deliberately different."""
 
     name: str
     min_area: int
@@ -53,6 +47,13 @@ PRIMARY = Profile(name="primary", min_area=300, var_threshold=40, history=250)
 VERIFY = Profile(name="verify", min_area=220, var_threshold=55, history=150)
 
 PROFILES = {"primary_vision": PRIMARY, "verification": VERIFY, "edge": PRIMARY}
+
+
+def profiles_for(scene) -> dict[str, Profile]:
+    """Kept for the MOG2 path; detection now runs through scry_vision.detector."""
+    return PROFILES
+
+
 MODEL_VERSION = PRIMARY.version
 
 
@@ -64,8 +65,7 @@ class Track:
 
 
 class Centroids:
-    """Nearest-neighbour tracker. Good enough for a fixed camera where vehicles
-    move predictably and never overlap for long."""
+    """Nearest-neighbour tracker, for a fixed camera with little overlap."""
 
     def __init__(self) -> None:
         self._tracks: dict[str, Track] = {}
@@ -112,53 +112,39 @@ def detect(mask: np.ndarray, min_area: int) -> list[tuple[Point, float]]:
             continue
         x, y, w, h = cv2.boundingRect(contour)
         centroid = Point(x=x + w / 2, y=y + h / 2)
-        # Bigger, more solid blobs are more likely to be a vehicle than a gust
-        # of foliage, so area stands in for confidence.
         found.append((centroid, min(0.99, 0.5 + area / 4000)))
     return found
 
 
-def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMARY,
+def observe(url: str, scene, seconds: float, role: str = "primary_vision",
             width: int = 640, height: int = 360) -> dict:
     capture = cv2.VideoCapture(url)
     if not capture.isOpened():
         return {"ok": False, "reason": "stream_unreachable"}
 
     fps = capture.get(cv2.CAP_PROP_FPS) or 15.0
-    # The window is a stretch of time, not a number of frames. Counting frames
-    # instead lets two observers on the same market cover different stretches of
-    # road, and the traffic between them reads as disagreement.
+    # Time, not frame count: otherwise two observers cover different stretches.
     deadline = datetime.now(UTC) + timedelta(seconds=seconds)
-    expected = seconds * fps
 
-    background = cv2.createBackgroundSubtractorMOG2(
-        history=profile.history, varThreshold=profile.var_threshold, detectShadows=True)
-    shape = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-
-    counter = CountLineTracker(line, CounterConfig(minimum_confidence=0.6, deadband_distance=3))
+    counter = occupancy_for(scene, role)
     samples: list[dict] = []
     bucket_seconds = 60
     bucket_started = datetime.now(UTC)
-    bucket_base = 0
-    tracker = Centroids()
+    bucket_at = 0
     health = Health()
     started = datetime.now(UTC)
     previous: np.ndarray | None = None
 
-    # Chained across the whole window, so each interval's digest also commits
-    # to every frame before it. Seeded with the source and start time so a
-    # chain cannot be lifted from one observation onto another.
+    # Seeded with source and start time so a chain cannot be lifted elsewhere.
     frames = digest(f"{url}|{started.isoformat()}".encode())
 
     misses = 0
+    last_position: float | None = None
     while datetime.now(UTC) < deadline:
         ok, frame = capture.read()
         if not ok:
             health.dropped += 1
             misses += 1
-            # These feeds arrive with barely more throughput than their bitrate,
-            # so a long read falls behind and the capture gives up partway. Take
-            # a fresh one and keep counting rather than abandon the window.
             if misses >= RECONNECT_AFTER:
                 capture.release()
                 capture = cv2.VideoCapture(url)
@@ -168,13 +154,18 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
             continue
 
         misses = 0
+        counter.feed(frame)
+        position = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        if position > 0 and last_position is not None:
+            health.saw_frame(max(0.0, position - last_position))
+        if position > 0:
+            last_position = position
         health.frames += 1
         small = cv2.resize(frame, (width, height))
         grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         health.contrast.append(float(grey.std()))
         frames = chain(frames, grey.tobytes())
 
-        # An identical frame means the encoder is repeating itself.
         if previous is not None and np.array_equal(grey, previous):
             health.frozen_run += 1
             health.longest_frozen = max(health.longest_frozen, health.frozen_run)
@@ -182,28 +173,18 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
             health.frozen_run = 0
         previous = grey
 
-        mask = background.apply(small)
-        mask[mask < 200] = 0
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, shape)
-        mask = cv2.dilate(mask, shape, iterations=2)
-
-        detections = detect(mask, profile.min_area)
         now = datetime.now(UTC)
-        for track_id, point in tracker.update([c for c, _ in detections]):
-            confidence = next((s for c, s in detections if c is point), 0.6)
-            counter.ingest(TrackSample(track_id, now, point, confidence, "vehicle"))
-
         elapsed_bucket = (now - bucket_started).total_seconds()
         if elapsed_bucket >= bucket_seconds:
             samples.append({
                 "observedAt": stamp(bucket_started),
-                "count": counter.count - bucket_base,
+                "count": round(statistics.fmean(counter.samples[bucket_at:] or [0])),
                 "intervalSeconds": int(elapsed_bucket),
                 "streamQuality": round(health.visibility(), 4),
-                "modelVersion": profile.version,
+                "modelVersion": counter.model.version,
                 "frameDigest": frames,
             })
-            bucket_base = counter.count
+            bucket_at = len(counter.samples)
             bucket_started = now
 
     capture.release()
@@ -214,22 +195,23 @@ def observe(url: str, line: CountLine, seconds: float, profile: Profile = PRIMAR
     if tail >= 1:
         samples.append({
             "observedAt": stamp(bucket_started),
-            "count": counter.count - bucket_base,
+            "count": round(statistics.fmean(counter.samples[bucket_at:] or [0])),
             "intervalSeconds": int(tail),
             "streamQuality": round(health.visibility(), 4),
-            "modelVersion": profile.version,
+            "modelVersion": counter.model.version,
             "frameDigest": frames,
         })
 
     return {
         "ok": health.frames > 0,
         "count": counter.count,
-        "uptime": round(health.uptime(expected), 4),
+        "uptime": round(health.uptime(elapsed), 4),
         "visibility": round(health.visibility(), 4),
         "frozenSeconds": round(health.longest_frozen / fps, 2),
         "frames": health.frames,
         "elapsed": round(elapsed, 1),
-        "modelVersion": profile.version,
+        "peak": counter.peak,
+        "modelVersion": counter.model.version,
         "evidenceRoot": bundle(samples)[0],
         "counts": samples,
     }

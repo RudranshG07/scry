@@ -11,13 +11,11 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// ErrNotObserving is returned when a report arrives for a market that is not in
-// its observation window. Late reports are refused rather than backdated.
+// ErrNotObserving means a late report, which is refused rather than backdated.
 var ErrNotObserving = errors.New("market is not observing")
 
-// SaveReport records one observer's reading. Observers may revise while the
-// window is open, so the same observer writing twice replaces its own row and
-// never adds a second vote.
+// SaveReport records one observer's reading. Writing twice replaces its own row
+// rather than adding a second vote.
 func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) error {
 	var status string
 	err := s.pool.QueryRow(ctx, `SELECT status FROM markets WHERE id = $1`, r.MarketID).Scan(&status)
@@ -39,8 +37,7 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (market_id, observer_id) DO UPDATE SET
 			observed_value = EXCLUDED.observed_value,
-			-- Provenance has to move with the value. A report claiming a model
-			-- that did not produce it is worse than no report at all.
+			-- Provenance moves with the value.
 			role = EXCLUDED.role,
 			model_version = EXCLUDED.model_version,
 			confidence = EXCLUDED.confidence,
@@ -52,9 +49,7 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 			signature = EXCLUDED.signature,
 			evidence_root = EXCLUDED.evidence_root,
 			recorded_at = EXCLUDED.recorded_at
-		-- Observers retry inside a window, so a stream that drops out near the
-		-- end would otherwise replace a good count with an empty one. A clean
-		-- reading is never downgraded; a faulted one can still be corrected.
+		-- A clean reading is never downgraded; a faulted one can still be fixed.
 		WHERE cardinality(EXCLUDED.invalid_reasons) = 0
 		   OR cardinality(observer_reports.invalid_reasons) > 0`,
 		r.MarketID, r.ObserverID, r.Role, r.ObservedValue, r.Confidence, r.ModelVersion,
@@ -66,10 +61,8 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 	return nil
 }
 
-// SaveCounts appends the per-interval counts behind a report. These are the
-// working record the evidence bundle is built from. Counts belong to the stream
-// rather than the market, so the market only identifies which stream to file
-// them against.
+// SaveCounts appends the per-interval counts behind a report. They belong to the
+// stream; the market only says which stream to file them against.
 func (s *Postgres) SaveCounts(ctx context.Context, marketID, observerID string, counts []domain.CountSample) error {
 	if len(counts) == 0 {
 		return nil
@@ -104,10 +97,8 @@ func (s *Postgres) SaveCounts(ctx context.Context, marketID, observerID string, 
 	return s.saveSamples(ctx, marketID, observerID, counts)
 }
 
-// saveSamples keeps the same intervals a second time, in the order they were
-// hashed into the evidence root. The stream-level counts are a rolling record
-// and get compacted; a proof has to reproduce the exact leaves in the exact
-// positions, which means storing them against the market that committed to them.
+// saveSamples keeps the intervals in the order they were hashed, since the
+// stream-level counts get compacted and a proof needs the exact leaves.
 func (s *Postgres) saveSamples(ctx context.Context, marketID, observerID string, counts []domain.CountSample) error {
 	_, err := s.pool.Exec(ctx,
 		`DELETE FROM observation_samples WHERE market_id = $1 AND observer_id = $2`,

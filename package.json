@@ -16,7 +16,9 @@
     "test:vision": "env PYTHONPATH=services/vision python3 -m unittest discover -s services/vision/tests -v",
     "test:curation": "env PYTHONPATH=services/curation python3 -m unittest discover -s services/curation/tests -v",
     "test:reputation": "env PYTHONPATH=services/reputation python3 -m unittest discover -s services/reputation/tests -v",
-    "calibrate": "env PYTHONPATH=services/vision python3 -m scry_vision.calibrate"
+    "calibrate": "env PYTHONPATH=services/vision python3 -m scry_vision.calibrate",
+    "stack": "./scripts/stack.sh",
+    "verify:ui": "./scripts/verify-ui.sh"
   },
   "dependencies": {
     "hls.js": "1.6.16",

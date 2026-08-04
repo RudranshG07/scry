@@ -5,12 +5,9 @@ import {IMarketFactory} from "./interfaces/IMarketFactory.sol";
 import {PooledMarket} from "./PooledMarket.sol";
 import {ScryTypes} from "./ScryTypes.sol";
 
-/// @notice Deploys one market per rule and remembers where it went.
-///
-/// The rule hash is committed here, before the market opens, and the resolver
-/// later refuses any result that does not carry it. Publishing the rule first is
-/// the whole claim of the product: the question cannot be edited once people
-/// have taken a side on it.
+/// @notice Deploys one market per rule and remembers where it went. The rule
+/// hash is committed before the market opens and the resolver refuses any result
+/// without it, so the question cannot be edited once people have taken a side.
 contract MarketFactory is IMarketFactory {
     using SafeTransfer for IERC20;
 
@@ -47,8 +44,6 @@ contract MarketFactory is IMarketFactory {
         if (_markets[rule.marketId] != address(0)) revert MarketExists();
         if (outcomes.length < 2) revert TooFewOutcomes();
 
-        // The lifecycle has to run forwards. A window that closes before it opens
-        // would lock a market nobody could ever have entered.
         if (
             rule.opensAt >= rule.locksAt || rule.locksAt > rule.observationStartsAt
                 || rule.observationStartsAt >= rule.observationEndsAt
@@ -71,9 +66,8 @@ contract MarketFactory is IMarketFactory {
         _markets[rule.marketId] = market;
         _marketIds.push(rule.marketId);
 
-        // Seed liquidity, so the first person in is not staking into an empty
-        // book. The market has to be told about it or the money would sit there
-        // outside the pool, paid to nobody and refundable by nobody.
+        // The market has to be told, or the seed sits outside the pool and is
+        // paid to nobody and refundable by nobody.
         if (sponsorReward != 0) {
             IERC20(collateral).pull(msg.sender, market, sponsorReward);
             PooledMarket(market).seed(msg.sender, sponsorReward);
@@ -82,9 +76,8 @@ contract MarketFactory is IMarketFactory {
         emit MarketCreated(rule.marketId, market, rule.streamId, rule.ruleHash);
     }
 
-    /// @dev Every count must land in exactly one band. Overlapping bands make a
-    /// result ambiguous and gapped ones make it unanswerable, and in both cases
-    /// the market can only invalidate - better to refuse to create it.
+    /// @dev Every count must land in exactly one band, or the market can only
+    /// ever invalidate.
     function _requireCovering(ScryTypes.Outcome[] calldata outcomes) private pure {
         for (uint256 i = 0; i < outcomes.length; i++) {
             for (uint256 j = i + 1; j < outcomes.length; j++) {

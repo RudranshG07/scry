@@ -2,12 +2,9 @@ pragma solidity 0.8.30;
 
 import {IReputationCheckpoint} from "./interfaces/IReputationCheckpoint.sol";
 
-/// @notice Anchors forecaster scores an epoch at a time.
-///
-/// Scores are computed off chain, where the history lives; only the root is
-/// published, so anyone can prove their own record against it without the chain
-/// carrying every forecast. An epoch is written once and never rewritten - a
-/// leaderboard that can be edited after the fact scores nothing.
+/// @notice Anchors forecaster scores an epoch at a time. Only the root is
+/// published, and an epoch is written once: a leaderboard that can be edited
+/// after the fact scores nothing.
 contract ReputationCheckpoint is IReputationCheckpoint {
     address public immutable admin;
     uint64 public latestEpoch;
@@ -33,8 +30,6 @@ contract ReputationCheckpoint is IReputationCheckpoint {
         if (msg.sender != admin) revert NotAdmin();
         if (root == bytes32(0)) revert InvalidConfiguration();
         if (_entries[epoch].root != bytes32(0)) revert EpochAlreadyPublished();
-        // Epochs land in order, so a gap is a missing checkpoint rather than
-        // something to be backfilled later against a record that has moved on.
         if (epoch != latestEpoch + 1 && latestEpoch != 0) revert EpochOutOfOrder();
 
         _entries[epoch] = Entry({root: root, validAt: validAt});

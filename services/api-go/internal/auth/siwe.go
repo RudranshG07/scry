@@ -1,8 +1,5 @@
-// Package auth verifies that whoever is calling controls the address they claim.
-//
-// There are no passwords here on purpose. Positions settle to an address on
-// chain, so the address is the account; anything else would be a second identity
-// to keep in step with the first.
+// Package auth verifies that a caller controls the address they claim.
+// Positions settle to an address on chain, so the address is the account.
 package auth
 
 import (
@@ -22,11 +19,8 @@ var (
 	ErrNonceMismatch    = errors.New("message carries a different nonce")
 )
 
-// Message is the part of a Sign-In With Ethereum payload worth checking. The
-// full spec carries more, but every field here has to be verified or it is
-// decoration: the domain stops a signature gathered elsewhere being replayed
-// against this site, and the nonce stops one being replayed against this site
-// twice.
+// Message is the part of a SIWE payload that gets verified. The domain stops a
+// signature gathered elsewhere being replayed here; the nonce stops replay twice.
 type Message struct {
 	Domain  string
 	Address string
@@ -34,9 +28,8 @@ type Message struct {
 	Raw     string
 }
 
-// Build renders the message a wallet is asked to sign. The server composes it
-// rather than accepting arbitrary text, so a caller cannot be tricked into
-// signing something that means more than it appears to.
+// Build renders the message a wallet signs. The server composes it so a caller
+// cannot be tricked into signing something broader than it appears.
 func Build(domain, address, nonce, issuedAt, statement string) string {
 	return fmt.Sprintf(
 		"%s wants you to sign in with your Ethereum account:\n%s\n\n%s\n\nURI: https://%s\nVersion: 1\nNonce: %s\nIssued At: %s",
@@ -66,10 +59,8 @@ func Parse(raw string) (Message, error) {
 	return m, nil
 }
 
-// Verify checks the signature and that the message says what the server expects
-// it to say. Recovering a valid address proves only that somebody signed
-// something; the domain, address and nonce are what tie that signature to this
-// sign-in and no other.
+// Verify checks the signature and that the message says what is expected.
+// Recovery alone proves only that somebody signed something.
 func Verify(raw, signature, domain, address, nonce string) error {
 	m, err := Parse(raw)
 	if err != nil {
@@ -102,7 +93,7 @@ func Recover(raw, signature string) (string, error) {
 		return "", ErrBadSignature
 	}
 
-	// Wallets emit v as 27/28; the recovery code wants 0/1 in the leading byte.
+	// Wallets emit v as 27/28; recovery wants 0/1.
 	v := sig[64]
 	if v >= 27 {
 		v -= 27
@@ -117,16 +108,13 @@ func Recover(raw, signature string) (string, error) {
 		return "", ErrBadSignature
 	}
 
-	// An Ethereum address is the last 20 bytes of the keccak of the uncompressed
-	// public key with its 0x04 prefix dropped.
 	raw65 := pub.SerializeUncompressed()
 	sum := keccak(raw65[1:])
 	return "0x" + toHex(sum[12:]), nil
 }
 
-// hash applies the personal_sign prefix. Without it a signature gathered here
-// would be a valid signature over raw bytes, which is indistinguishable from a
-// signed transaction to anything that does not know the difference.
+// hash applies the personal_sign prefix, so a login signature cannot also be a
+// valid signature over raw transaction bytes.
 func hash(message string) []byte {
 	prefixed := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
 	return keccak([]byte(prefixed))

@@ -14,8 +14,6 @@ import (
 )
 
 const (
-	// Long enough for a wallet prompt and a slow hand, short enough that a nonce
-	// left on screen is not a standing invitation.
 	nonceLifetime   = 10 * time.Minute
 	sessionLifetime = 14 * 24 * time.Hour
 )
@@ -40,12 +38,8 @@ func (s *Postgres) IssueNonce(ctx context.Context, address string) (string, erro
 	return nonce, nil
 }
 
-// ConsumeNonce spends a nonce, and will only ever do so once.
-//
-// The single UPDATE is the whole mechanism: two requests racing with the same
-// nonce both run it, but only one finds a row still unconsumed. Checking and
-// then marking as separate statements would let a captured signature be replayed
-// in the gap between them.
+// ConsumeNonce spends a nonce once. The single guarded UPDATE is the mechanism:
+// separate check and mark would leave a gap for replay.
 func (s *Postgres) ConsumeNonce(ctx context.Context, nonce, address string) error {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE auth_nonces SET consumed_at = NOW()
@@ -60,9 +54,8 @@ func (s *Postgres) ConsumeNonce(ctx context.Context, nonce, address string) erro
 	return nil
 }
 
-// StartSession returns the bearer token and stores only its digest. Anyone who
-// reads the table learns which addresses have sessions, but cannot mint a cookie
-// that passes as one.
+// StartSession returns the bearer token and stores only its digest, so reading
+// the table cannot mint a cookie.
 func (s *Postgres) StartSession(ctx context.Context, address string) (string, time.Time, error) {
 	raw, err := token(32)
 	if err != nil {
@@ -120,8 +113,7 @@ func token(size int) (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// Addresses arrive from wallets in mixed case. Storing one casing keeps a
-// session, a nonce and a position all pointing at the same account.
+// Wallets send mixed case; one casing keeps session, nonce and position aligned.
 func normalise(address string) string {
 	return strings.ToLower(strings.TrimSpace(address))
 }

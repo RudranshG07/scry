@@ -30,12 +30,15 @@ type marketUpdate struct {
 func (server *Server) marketStream(writer http.ResponseWriter, request *http.Request) {
 	marketID := request.PathValue("id")
 
-	origins := []string{}
-	if server.allowedOrigin != "" {
-		origins = append(origins, server.allowedOrigin)
+	// OriginPatterns is matched against the Origin header's host, which keeps its
+	// port. Only the scheme comes off: dropping the port too would leave
+	// "localhost" failing to match "localhost:3000" and reject every handshake.
+	patterns := make([]string, 0, len(server.allowedOrigins))
+	for _, origin := range server.allowedOrigins {
+		patterns = append(patterns, hostPortOf(origin))
 	}
 	socket, err := websocket.Accept(writer, request, &websocket.AcceptOptions{
-		OriginPatterns: origins,
+		OriginPatterns: patterns,
 	})
 	if err != nil {
 		return

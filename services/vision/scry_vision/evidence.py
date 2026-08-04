@@ -1,36 +1,22 @@
-"""Builds the evidence bundle behind a report.
+"""Merkle bundle behind a report, so any interval can be proved against the
+published root without republishing the footage.
 
-A count nobody can check is just a number an observer asserted. This turns the
-working record into a merkle tree, so the root can be published with the result
-and any single interval proved against it afterwards without republishing the
-footage.
-
-sha256 rather than keccak256: Solidity reaches sha256 through a precompile, so a
-proof stays cheap to verify on chain, and it is in the Python standard library.
-hashlib.sha3_256 is *not* keccak256 - the padding differs - so reaching for it
-would produce roots the chain could never reproduce.
+sha256, not keccak256: Solidity reaches sha256 through a precompile and it is in
+the standard library. hashlib.sha3_256 is not keccak256; the padding differs.
 """
 
 from __future__ import annotations
 
 import hashlib
 
-# Leaves and internal nodes are hashed under different prefixes, so a leaf can
-# never be replayed as a node. Without this an attacker can present an internal
-# node as though it were a real interval and prove something that never
-# happened. RFC 6962 does the same thing for certificate logs.
+# RFC 6962 domain separation, so a leaf cannot be replayed as an internal node.
 LEAF = b"\x00"
 NODE = b"\x01"
 
 
 def stamp(when) -> str:
-    """Canonical timestamp for anything that gets hashed.
-
-    datetime.isoformat() drops the microseconds when they happen to be zero, so
-    the same instant can encode two different ways and hash to two different
-    leaves. Fixed width always, or Go and Python quietly disagree about one
-    interval in a million.
-    """
+    """Fixed-width, because isoformat() drops zero microseconds and the same
+    instant would then hash two different ways across languages."""
     return when.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
 
@@ -39,23 +25,14 @@ def digest(payload: bytes) -> str:
 
 
 def chain(previous: str, payload: bytes) -> str:
-    """Folds one frame into a running digest.
-
-    Frames are hashed as a chain rather than kept individually: the bundle stays
-    a fixed size however long the window runs, and because each step includes the
-    one before it, a frame cannot be dropped, reordered or swapped without
-    changing every digest after it.
-    """
+    """Folds a frame into a running digest, so the bundle stays fixed size and no
+    frame can be dropped or reordered without changing every digest after it."""
     return hashlib.sha256(previous.encode() + payload).hexdigest()
 
 
 def leaf(sample: dict) -> bytes:
-    """One counting interval, canonically encoded.
-
-    Field order and separator are fixed so Python, Go and Solidity all hash the
-    same bytes. Anything ambiguous here would produce roots that disagree across
-    languages while looking correct in each.
-    """
+    """One interval, canonically encoded. Field order and separator are fixed so
+    Python, Go and Solidity hash the same bytes."""
     fields = [
         sample["observedAt"],
         str(sample["count"]),
@@ -67,17 +44,9 @@ def leaf(sample: dict) -> bytes:
 
 
 def pair(a: bytes, b: bytes) -> bytes:
-    """Hashes two nodes smallest first.
-
-    Sorting means a proof carries only siblings and no left/right flags, which is
-    the shape Solidity's MerkleProof already verifies. Both sides must sort
-    identically or nothing built here will check out on chain.
-
-    The trade is that the root fixes the set of intervals rather than their
-    order. That costs nothing here because every leaf carries its own
-    observedAt, so the timeline is read from the data rather than inferred from
-    the shape of the tree.
-    """
+    """Smallest first, matching Solidity's MerkleProof so a proof carries only
+    siblings. The root then fixes the set of intervals, not their order, which
+    costs nothing because every leaf carries its own observedAt."""
     left, right = (a, b) if a < b else (b, a)
     return hashlib.sha256(NODE + left + right).digest()
 
@@ -89,9 +58,8 @@ def root(leaves: list[bytes]) -> str:
     level = list(leaves)
     while len(level) > 1:
         nxt = [pair(level[i], level[i + 1]) for i in range(0, len(level) - 1, 2)]
-        # An unpaired node is carried up rather than hashed with itself.
-        # Duplicating it lets two different sets of intervals produce the same
-        # root, which is exactly what the root exists to rule out.
+        # Carried up, not hashed with itself: duplicating lets two different
+        # interval sets reach the same root.
         if len(level) % 2:
             nxt.append(level[-1])
         level = nxt
@@ -100,7 +68,7 @@ def root(leaves: list[bytes]) -> str:
 
 
 def path(leaves: list[bytes], index: int) -> list[str]:
-    """Siblings needed to walk one leaf back up to the root."""
+    """Siblings needed to walk one leaf up to the root."""
     if not leaves or index < 0 or index >= len(leaves):
         return []
 
@@ -117,8 +85,6 @@ def path(leaves: list[bytes], index: int) -> list[str]:
             nxt.append(level[-1])
 
         if carried:
-            # This node had no sibling at this level, so it rises untouched and
-            # contributes nothing to the proof.
             at = len(nxt) - 1
         else:
             out.append(level[at ^ 1].hex())

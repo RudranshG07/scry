@@ -1,9 +1,4 @@
-/**
- * Reads and writes the settlement contracts through whatever wallet is present.
- *
- * The wallet provider already speaks EIP-1193, so this stays a thin layer over
- * it rather than a second wallet stack.
- */
+/** Reads and writes the settlement contracts through the connected wallet. */
 
 import { decodeUint, encode, type HexString } from "./abi.ts";
 
@@ -16,12 +11,8 @@ export const chains = {
   polygon: 137,
 } as const;
 
-/**
- * USDC per chain. Polygon runs two: Polymarket settles in the bridged USDC.e,
- * and the native one is a different contract holding different money. Sending to
- * the wrong one produces a transfer that succeeds and a balance that never
- * appears, so these are pinned rather than configured.
- */
+/** Polygon runs two USDCs; Polymarket settles in the bridged USDC.e. Sending to
+ * the wrong one succeeds and the balance never appears. */
 export const collateral: Record<number, HexString> = {
   [chains.base]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   [chains.polygon]: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
@@ -68,11 +59,7 @@ async function send(provider: Eip1193, from: string, to: string, data: HexString
   });
 }
 
-/**
- * Approves only what this deposit needs, and only when the existing allowance
- * cannot cover it. An unlimited approval would leave the market able to move a
- * wallet's whole USDC balance long after the market has settled.
- */
+/** Approves only this deposit. An unlimited allowance would outlive the market. */
 export async function approveIfNeeded(
   provider: Eip1193,
   token: string,
@@ -103,8 +90,7 @@ export async function refund(provider: Eip1193, market: string, from: string) {
   return send(provider, from, market, encode.refund());
 }
 
-/** personal_sign takes the message as hex, so the wallet shows readable text
- * rather than a wall of bytes the signer cannot judge. */
+/** Hex-encoded so wallets render the words rather than raw bytes. */
 export function toSignableHex(message: string): HexString {
   const bytes = new TextEncoder().encode(message);
   let hex = "";

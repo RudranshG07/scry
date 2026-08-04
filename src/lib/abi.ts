@@ -1,12 +1,8 @@
 /**
- * Calldata for the handful of calls this app makes.
- *
- * Every argument here is a single 32-byte word, so encoding them by hand is a
- * few lines and avoids pulling a whole ABI library in for four functions. The
- * selectors are keccak hashes and cannot be derived in the browser without one,
- * so they are pinned as constants and checked against the compiled contracts in
- * tests/abi.test.mjs. A wrong selector calls a different function or none at
- * all, which is exactly the kind of thing that fails silently with money on it.
+ * Calldata for the few calls this app makes. Every argument is one 32-byte word,
+ * so hand encoding avoids an ABI library. Selectors are keccak hashes, which the
+ * browser cannot derive, so they are pinned and checked against the compiled
+ * contracts in tests/abi.test.mjs.
  */
 
 export type HexString = `0x${string}`;
@@ -40,9 +36,7 @@ export function encodeUint(value: bigint): string {
   return padWord(value.toString(16));
 }
 
-/** Outcome ids are short ascii ("yes", "no"), which solidity holds as bytes32
- * left-aligned. Right-padding is the opposite of every other type here, so it is
- * done explicitly rather than reusing padWord. */
+/** Solidity holds bytes32 left-aligned, the opposite of every other type here. */
 export function encodeBytes32(text: string): string {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length > 32) throw new Error("outcome id is too long for bytes32");
@@ -78,9 +72,7 @@ export const encode = {
   status: () => call(selectors.status),
 };
 
-/** USDC carries six decimals on both Base and Polygon. Parsing through a float
- * would round "0.1" to something that is not 0.1, so the decimal string is split
- * and padded instead. */
+/** Six decimals on both chains. A float would round "0.1" to something else. */
 export const usdcDecimals = 6;
 
 export function toUsdc(amount: string): bigint {

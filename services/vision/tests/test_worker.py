@@ -2,7 +2,9 @@ import unittest
 
 from datetime import UTC, datetime, timedelta
 
-from scry_vision.calibrate import spread, summarise
+from scry_vision.probe import verdict
+from scry_vision.scenes import scene_for
+from scry_vision.calibrate import TOLERANCE_FLOOR, TOLERANCE_PERCENT, agrees, allowed_spread, spread, summarise
 from scry_vision.worker import JOIN_GRACE, StreamMismatch, at, guard, pick, slot
 
 
@@ -175,6 +177,200 @@ class SettleableTest(unittest.TestCase):
     def test_no_settleable_window_is_reported_rather_than_averaged_away(self):
         starved = [{"ok": True, "spread": 3.0, "uptime": 0.5}]
         self.assertEqual(summarise(starved, settleable_only=True)["windows"], 0)
+
+class AgreementTest(unittest.TestCase):
+    """calibrate must apply the same rule as the resolver, or it reports
+    failures the engine would have settled without hesitating."""
+
+    def test_small_counts_are_judged_by_the_floor_not_a_percentage(self):
+        # 3 vs 4 is 33% but one event apart. The engine settles it.
+        self.assertTrue(agrees(3, 4))
+        self.assertEqual(allowed_spread(3), 2)
+
+    def test_large_counts_are_judged_proportionally(self):
+        self.assertTrue(agrees(200, 208))
+        self.assertFalse(agrees(200, 220))
+
+    def test_the_floor_does_not_become_a_licence_at_volume(self):
+        self.assertFalse(agrees(100, 120))
+
+    def test_matches_the_resolver_constants(self):
+        self.assertEqual(TOLERANCE_PERCENT, 0.05)
+        self.assertEqual(TOLERANCE_FLOOR, 2)
+
+class ProbeVerdictTest(unittest.TestCase):
+    """A camera has to earn its place in the pool. The first pool this project
+    used delivered ten seconds of video every eight and a half seconds and then
+    started returning 403; nothing downstream could tell that from a bad
+    detector."""
+
+    def good_net(self):
+        return {"ok": True, "realtime_factor": 12.0, "seconds_of_video": 15.0}
+
+    def good_seen(self):
+        return {"ok": True, "fps": 30.0, "uptime": 1.0, "frame_gap": 0, "counts": [10, 10]}
+
+    def test_a_healthy_camera_is_accepted(self):
+        ok, why = verdict(self.good_net(), self.good_seen())
+        self.assertTrue(ok, why)
+
+    def test_barely_keeping_up_is_refused(self):
+        # Caltrans sat at 1.16x and held until it did not.
+        net = self.good_net() | {"realtime_factor": 1.2}
+        ok, why = verdict(net, self.good_seen())
+        self.assertFalse(ok)
+        self.assertIn("real time", why)
+
+    def test_too_few_frames_to_track_is_refused(self):
+        ok, why = verdict(self.good_net(), self.good_seen() | {"fps": 3.2})
+        self.assertFalse(ok)
+
+    def test_frame_drift_on_direct_pulls_is_the_relay_s_problem_not_the_source_s(self):
+        # Two readers each open their own connection and land on different
+        # segment boundaries. Serving both from one ingest removes it, measured
+        # at exactly zero, so a small drift does not disqualify the camera.
+        ok, why = verdict(self.good_net(), self.good_seen() | {"frame_gap": 44})
+        self.assertTrue(ok)
+        self.assertIn("relay", why)
+
+    def test_a_scene_the_detector_cannot_see_is_refused(self):
+        # A perfect stream where the count line crosses nothing is not usable,
+        # and saying so beats passing it as healthy.
+        ok, why = verdict(self.good_net(), self.good_seen() | {"counts": [0, 0]})
+        self.assertFalse(ok)
+        self.assertIn("count line", why)
+
+    def test_uptime_that_would_invalidate_every_market_is_refused(self):
+        ok, _ = verdict(self.good_net(), self.good_seen() | {"uptime": 0.53})
+        self.assertFalse(ok)
+
+    def test_an_unreachable_source_is_refused_with_its_reason(self):
+        ok, why = verdict({"ok": False, "reason": "bad status code: 403"}, {})
+        self.assertFalse(ok)
+        self.assertIn("403", why)
+
+class SceneTest(unittest.TestCase):
+    def test_an_unknown_stream_falls_back_to_the_freeway_preset(self):
+        self.assertEqual(scene_for("stream-nobody-configured").name, "freeway")
+
+    def test_a_horizontal_line_spans_the_frame_width(self):
+        line = scene_for("stream-tokyo-shibuya").line(width=640, height=360)
+        self.assertEqual(line.start.y, line.end.y)
+        self.assertEqual(line.end.x, 640.0)
+
+    def test_a_vertical_line_is_used_where_traffic_moves_sideways(self):
+        """Abbey Road pedestrians travel 2612px sideways against 852px
+        vertically, so a horizontal line is perpendicular to the traffic."""
+        abbey = scene_for("stream-london-abbey")
+        self.assertTrue(abbey.vertical)
+        line = abbey.line(width=640, height=360)
+        self.assertEqual(line.start.x, line.end.x)
+        self.assertNotEqual(line.start.y, line.end.y)
+
+    def test_a_vertical_line_sits_inside_the_span_people_travel(self):
+        # Movers covered x=320-633 of 640.
+        abbey = scene_for("stream-london-abbey")
+        self.assertGreater(abbey.at * 640, 320)
+        self.assertLess(abbey.at * 640, 633)
+
+class JoinRaceTest(unittest.TestCase):
+    """The engine sets Observing only after observation_starts_at has passed --
+    92 seconds late in one measured case. An observer that waits for that status
+    has already missed the start of the window it must cover in full, so it
+    skipped every market and nothing ever settled."""
+
+    def scheduled(self, status):
+        return {"id": "m", "streamId": "s", "status": status,
+                "observationStartsAt": "2026-08-01T00:00:00Z",
+                "observationEndsAt": "2026-08-01T00:15:00Z"}
+
+    def test_an_observer_takes_position_before_the_window_opens(self):
+        for status in ("Open", "Locked"):
+            self.assertIsNotNone(pick([self.scheduled(status)], "s", None), status)
+
+    def test_it_still_picks_up_a_window_already_running(self):
+        self.assertIsNotNone(pick([self.scheduled("Observing")], "s", None))
+
+    def test_settled_markets_are_left_alone(self):
+        # Scheduled is deliberately not here: an observer positions the moment a
+        # market exists and waits for the clock, because every status change is
+        # another chance to arrive after the window has already opened.
+        for status in ("Resolved", "Invalid", "Result proposed", "Challenged"):
+            self.assertIsNone(pick([self.scheduled(status)], "s", None), status)
+
+    def test_position_is_taken_from_the_schedule_not_the_status(self):
+        # Same schedule regardless of which pre-window status the market is in,
+        # so the observer starts counting at the same instant either way.
+        self.assertEqual(slot(self.scheduled("Open"), 900),
+                         slot(self.scheduled("Observing"), 900))
+
+class EarlyPositionTest(unittest.TestCase):
+    def market(self, status):
+        return {"id": "m", "streamId": "s", "status": status,
+                "observationStartsAt": "2026-08-01T00:00:00Z",
+                "observationEndsAt": "2026-08-01T00:15:00Z"}
+
+    def test_an_observer_positions_as_soon_as_a_market_is_scheduled(self):
+        # There is nothing to gain by waiting for Open. Every status change is
+        # another chance to arrive after the window has already started.
+        self.assertIsNotNone(pick([self.market("Scheduled")], "s", None))
+
+class DetectorProfileTest(unittest.TestCase):
+    """Two identical detectors agree even when both are wrong, so the profiles
+    have to differ in something real."""
+
+    def test_the_profiles_use_different_weights_and_thresholds(self):
+        from scry_vision.detector import PRIMARY, VERIFY
+        self.assertNotEqual(PRIMARY.weights, VERIFY.weights)
+        self.assertNotEqual(PRIMARY.confidence, VERIFY.confidence)
+        self.assertNotEqual(PRIMARY.iou, VERIFY.iou)
+
+    def test_the_version_names_the_model_that_produced_the_count(self):
+        from scry_vision.detector import PRIMARY, VERIFY
+        self.assertIn("yolov8s", PRIMARY.version)
+        self.assertIn("yolov8n", VERIFY.version)
+        self.assertNotEqual(PRIMARY.version, VERIFY.version)
+
+    def test_people_and_vehicles_are_different_coco_classes(self):
+        from scry_vision.detector import PEOPLE, VEHICLES
+        self.assertEqual(PEOPLE, (0,))
+        self.assertNotIn(0, VEHICLES)
+
+class LinePlacementTest(unittest.TestCase):
+    def test_cameras_without_an_override_keep_the_preset(self):
+        preset = scene_for("stream-sd-8-15")
+        self.assertAlmostEqual(preset.at, 0.6)
+        self.assertFalse(preset.vertical)
+
+    def test_an_override_does_not_disturb_the_rest_of_the_scene(self):
+        abbey = scene_for("stream-london-abbey")
+        self.assertEqual(abbey.unit, "people")
+        self.assertEqual(abbey.name, "crossing")
+
+class OccupancyTest(unittest.TestCase):
+    """Reading every frame keeps the footage timeline whole; inferring on every
+    frame does not fit in real time and the gaps void the window."""
+
+    def counter(self):
+        from scry_vision.occupancy import Occupancy
+        c = Occupancy.__new__(Occupancy)
+        c.role, c.unit, c.samples, c.seen = "primary_vision", "people", [], 0
+        return c
+
+    def test_the_settled_value_is_a_mean_not_a_peak(self):
+        c = self.counter()
+        c.samples = [10, 10, 10, 40]
+        self.assertEqual(c.count, 18)
+        self.assertEqual(c.peak, 40)
+
+    def test_an_empty_window_counts_zero_rather_than_failing(self):
+        self.assertEqual(self.counter().count, 0)
+
+    def test_stride_is_small_enough_to_sample_every_second(self):
+        from scry_vision.occupancy import STRIDE
+        # At 25fps a stride of 4 still samples six times a second, which a mean
+        # over a fifteen minute window cannot notice.
+        self.assertLessEqual(STRIDE, 5)
 
 
 if __name__ == "__main__":

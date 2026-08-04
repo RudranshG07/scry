@@ -35,8 +35,15 @@ func main() {
 		engineCtx, stopEngine := context.WithCancel(context.Background())
 		defer stopEngine()
 		go engine.New(postgres.Pool(), slog.Default()).Run(engineCtx)
+	} else if os.Getenv("SCRY_USE_MEMORY_STORE") == "1" {
+		slog.Warn("serving from the in-memory store; nothing here was observed")
 	} else {
-		slog.Warn("SCRY_DATABASE_URL is unset, serving from the in-memory store")
+		// The in-memory store serves invented markets that are indistinguishable
+		// from real ones over the API. Warning and carrying on has already cost
+		// hours here twice, once because the variable was spelled DATABASE_URL.
+		// Refusing to start is the only version that cannot be missed.
+		slog.Error("SCRY_DATABASE_URL is unset. Set it, or SCRY_USE_MEMORY_STORE=1 to serve the simulator on purpose.")
+		os.Exit(1)
 	}
 
 	server := &http.Server{

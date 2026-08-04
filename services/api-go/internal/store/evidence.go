@@ -11,17 +11,13 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// The observer hashes leaves under one prefix and internal nodes under another,
-// so a leaf can never be replayed as a node. These have to stay identical to
-// scry_vision/evidence.py or the roots will not agree.
+// Must stay identical to scry_vision/evidence.py or the roots will not agree.
 var (
 	leafPrefix = []byte{0x00}
 	nodePrefix = []byte{0x01}
 )
 
-// GetEvidence returns one observer's intervals with the proof each needs to be
-// checked against the published root. It is the difference between a result you
-// are asked to trust and one you can take apart.
+// GetEvidence returns one observer's intervals with a proof for each.
 func (s *Postgres) GetEvidence(ctx context.Context, marketID, observerID string) (domain.EvidenceBundle, error) {
 	var b domain.EvidenceBundle
 	b.MarketID, b.ObserverID = marketID, observerID
@@ -70,9 +66,6 @@ func (s *Postgres) GetEvidence(ctx context.Context, marketID, observerID string)
 }
 
 func leafFor(s domain.EvidenceSample) []byte {
-	// Field order and separator must match evidence.py exactly. Anything
-	// ambiguous here produces roots that disagree across languages while looking
-	// correct in both.
 	encoded := fmt.Sprintf("%s|%d|%d|%s|%s",
 		s.ObservedAt.UTC().Format("2006-01-02T15:04:05.000000Z"),
 		s.Count, s.IntervalSeconds, s.ModelVersion, s.FrameDigest)
@@ -80,8 +73,6 @@ func leafFor(s domain.EvidenceSample) []byte {
 	return sum[:]
 }
 
-// pair hashes two nodes smallest first, so a proof carries only siblings and no
-// left/right flags.
 func pair(a, b []byte) []byte {
 	left, right := a, b
 	if string(b) < string(a) {
@@ -102,8 +93,6 @@ func rootOf(leaves [][]byte) string {
 		for i := 0; i+1 < len(level); i += 2 {
 			next = append(next, pair(level[i], level[i+1]))
 		}
-		// An unpaired node rises untouched. Hashing it with itself would let two
-		// different sets of intervals reach the same root.
 		if len(level)%2 == 1 {
 			next = append(next, level[len(level)-1])
 		}

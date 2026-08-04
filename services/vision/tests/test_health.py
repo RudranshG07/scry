@@ -38,20 +38,51 @@ class VisibilityTest(unittest.TestCase):
 
 
 class UptimeTest(unittest.TestCase):
-    def test_uptime_is_share_of_the_window_covered(self):
-        self.assertAlmostEqual(Health(frames=90).uptime(100), 0.9)
+    def steady(self, window, fps):
+        """A window whose footage steps evenly with no jumps."""
+        h = Health()
+        for _ in range(int(window * fps)):
+            h.saw_frame(1.0 / fps)
+            h.frames += 1
+        return h
 
-    def test_a_stream_that_missed_frames_cannot_settle_a_market(self):
-        h = seen(60.0, frames=90)
-        self.assertIn("uptime_below_minimum", faults(True, h.uptime(100), h.visibility()))
+    def test_sampling_below_the_nominal_rate_is_not_downtime(self):
+        h = self.steady(900, 13.4)
+        self.assertEqual(h.uptime(900), 1.0)
+        self.assertEqual(faults(True, h.uptime(900), 1.0), [])
 
-    def test_a_dead_capture_is_not_flattered_by_its_retries(self):
-        # Thousands of instant failures, no frames: covering none of the window
-        # has to read as zero rather than as a near miss.
+    def test_footage_that_jumps_forward_is_downtime(self):
+        h = self.steady(450, 13.4)
+        h.saw_frame(450.0)
+        h.frames += 1
+        self.assertLess(h.uptime(900), 0.55)
+        self.assertIn("uptime_below_minimum", faults(True, h.uptime(900), 1.0))
+
+    def test_bursty_delivery_is_not_downtime(self):
+        """HLS hands over a segment at a time, so frames arrive in bursts with
+        seconds of silence between them while the footage misses nothing."""
+        h = Health()
+        for _ in range(18):
+            for _ in range(150):
+                h.saw_frame(1 / 30)
+                h.frames += 1
+        self.assertEqual(h.uptime(90), 1.0)
+
+    def test_short_stalls_are_tolerated_as_ordinary_jitter(self):
+        h = self.steady(900, 13.4)
+        for _ in range(20):
+            h.saw_frame(0.9)
+            h.frames += 1
+        self.assertEqual(h.uptime(900), 1.0)
+
+    def test_the_worst_single_gap_is_remembered(self):
+        h = self.steady(60, 10)
+        h.saw_frame(7.5)
+        h.frames += 1
+        self.assertAlmostEqual(h.longest_gap, 7.5)
+
+    def test_a_dead_capture_covers_nothing(self):
         self.assertEqual(Health(frames=0, dropped=9000).uptime(100), 0.0)
-
-    def test_a_full_window_passes(self):
-        self.assertEqual(faults(True, Health(frames=100).uptime(100), 1.0), [])
 
     def test_unavailable_evidence_is_reported_even_on_clean_footage(self):
         self.assertIn("evidence_unavailable", faults(False, 1.0, 1.0))

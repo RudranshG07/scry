@@ -18,8 +18,7 @@ export type PositionState = {
 
 const idle: PositionState = { stage: "idle", message: "", approvalHash: null, depositHash: null };
 
-/** Wallets reject with 4001 when someone changes their mind. That is not a
- * failure worth showing in red. */
+/** 4001 is the user changing their mind, not a failure. */
 function rejected(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === 4001;
 }
@@ -34,8 +33,6 @@ export function usePosition(market: Market) {
   const wallet = useWallet();
   const [state, setState] = useState<PositionState>(idle);
 
-  // A market that has not been deployed has no contract to escrow anything, so
-  // there is nothing honest to do with a stake yet.
   const settles = Boolean(market.contractAddress);
 
   const take = useCallback(

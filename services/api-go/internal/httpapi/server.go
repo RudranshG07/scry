@@ -24,28 +24,28 @@ type PlaybackTokenIssuer interface {
 }
 
 type Server struct {
-	mux           *http.ServeMux
-	store         store.Store
-	issuer        PlaybackTokenIssuer
-	allowedOrigin string
-	domain        string
-	secureCookies bool
-	log           *slog.Logger
+	mux            *http.ServeMux
+	store          store.Store
+	issuer         PlaybackTokenIssuer
+	allowedOrigins []string
+	domain         string
+	secureCookies  bool
+	log            *slog.Logger
 }
 
 func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Server {
-	origin := strings.TrimSuffix(allowedOrigin, "/")
+	origins := splitOrigins(allowedOrigin)
 	server := &Server{
-		mux:           http.NewServeMux(),
-		store:         data,
-		issuer:        issuer,
-		allowedOrigin: origin,
+		mux:            http.NewServeMux(),
+		store:          data,
+		issuer:         issuer,
+		allowedOrigins: origins,
 		// The domain in a sign-in message has to be the site the user is actually
 		// on, or the check that a signature was meant for us proves nothing.
-		domain: hostOf(origin),
+		domain: hostOf(origins[0]),
 		// A session cookie sent in the clear is a session anyone on the path can
 		// take, but localhost has no certificate to offer.
-		secureCookies: strings.HasPrefix(origin, "https://"),
+		secureCookies: strings.HasPrefix(origins[0], "https://"),
 		log:           slog.Default(),
 	}
 	server.routes()
@@ -75,7 +75,7 @@ func (server *Server) routes() {
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("Cache-Control", "no-store")
-	if origin := request.Header.Get("Origin"); origin != "" && origin == server.allowedOrigin {
+	if origin := request.Header.Get("Origin"); origin != "" && server.allows(origin) {
 		writer.Header().Set("Access-Control-Allow-Origin", origin)
 		writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		writer.Header().Set("Vary", "Origin")
@@ -255,4 +255,35 @@ func hostOf(origin string) string {
 		return host
 	}
 	return trimmed
+}
+
+// splitOrigins accepts a comma-separated list. Browsers treat http://localhost
+// and http://127.0.0.1 as different origins, so a dev setup that names only one
+// blocks the other with a CORS error that looks like the API being down.
+func splitOrigins(configured string) []string {
+	var out []string
+	for _, part := range strings.Split(configured, ",") {
+		if trimmed := strings.TrimSuffix(strings.TrimSpace(part), "/"); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, "http://127.0.0.1:3000")
+	}
+	return out
+}
+
+func (server *Server) allows(origin string) bool {
+	for _, allowed := range server.allowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// hostPortOf strips the scheme but keeps the port, which is what websocket
+// origin matching compares against.
+func hostPortOf(origin string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
 }

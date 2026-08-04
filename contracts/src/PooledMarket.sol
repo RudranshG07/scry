@@ -5,12 +5,8 @@ import {IPooledMarket} from "./interfaces/IPooledMarket.sol";
 import {ScryTypes} from "./ScryTypes.sol";
 
 /// @notice One market, settled parimutuel: a share of the winning pool is a
-/// share of everything staked. There is no counterparty and no price to quote,
-/// which is the same rule the API prices with off chain.
-///
-/// A market nobody could observe pays nobody and refunds everybody. Refusing to
-/// answer has to stay cheaper than answering wrongly, or observers come under
-/// pressure to produce a number rather than a reading.
+/// share of everything staked. A market nobody could observe refunds everybody,
+/// so refusing to answer stays cheaper than answering wrongly.
 contract PooledMarket is IPooledMarket {
     using SafeTransfer for IERC20;
 
@@ -80,9 +76,8 @@ contract PooledMarket is IPooledMarket {
 
     function deposit(bytes32 outcomeId, uint256 amount) external override {
         if (_status != ScryTypes.MarketStatus.Open) revert WrongStatus();
-        // The clock closes the book on its own. Waiting for someone to call
-        // lock() would leave a window where counting has started and a position
-        // could still be taken against it.
+        // The clock closes the book, not lock(), or a position could be taken
+        // against a count already running.
         if (block.timestamp >= locksAt) revert WrongStatus();
         if (!_isOutcome[outcomeId]) revert UnknownOutcome();
         if (amount == 0) revert ZeroAmount();
@@ -97,10 +92,8 @@ contract PooledMarket is IPooledMarket {
         emit PositionDeposited(msg.sender, outcomeId, amount);
     }
 
-    /// @notice Records collateral the factory has already sent as seed liquidity.
-    /// It joins the pool the winners divide, so the first person in is not
-    /// staking into an empty book, but it belongs to no outcome and so can never
-    /// be claimed directly. If the market voids, the sponsor takes it back.
+    /// @notice Seed liquidity the factory has already sent. It joins the pool
+    /// winners divide but belongs to no outcome, so it is never claimed directly.
     function seed(address sponsor_, uint256 amount) external {
         if (msg.sender != factory) revert NotFactory();
         if (_status != ScryTypes.MarketStatus.Open) revert WrongStatus();
@@ -111,9 +104,8 @@ contract PooledMarket is IPooledMarket {
         totalPool += amount;
     }
 
-    /// @notice Returns the seed once a market has voided. Stakes are refunded
-    /// one by one and the seed backs no stake, so without this it would sit in
-    /// the contract belonging to nobody.
+    /// @notice Returns the seed once a market voids; it backs no stake, so
+    /// nothing else would ever release it.
     function reclaimSeed() external returns (uint256 amount) {
         if (_status != ScryTypes.MarketStatus.Invalid) revert WrongStatus();
         if (msg.sender != sponsor) revert NotSponsor();
@@ -138,8 +130,7 @@ contract PooledMarket is IPooledMarket {
         if (_status != ScryTypes.MarketStatus.Observing) revert WrongStatus();
         if (!_isOutcome[outcomeId]) revert UnknownOutcome();
 
-        // Nobody backed the winning side, so there is no pool to divide against
-        // and no honest payout. Everyone takes their stake back instead.
+        // Nothing backed the winner, so there is no pool to divide against.
         if (_pool[outcomeId] == 0) {
             _status = ScryTypes.MarketStatus.Invalid;
             emit MarketInvalidated("no winning stake");
@@ -170,8 +161,7 @@ contract PooledMarket is IPooledMarket {
         uint256 backed = _position[msg.sender][winningOutcomeId];
         if (backed == 0) revert NothingToClaim();
 
-        // Multiply before dividing, so the rounding loss stays under one unit
-        // per claim instead of compounding through an intermediate share.
+        // Multiply before dividing to keep rounding loss under one unit.
         amount = (backed * totalPool) / _pool[winningOutcomeId];
 
         _settled[msg.sender] = true;

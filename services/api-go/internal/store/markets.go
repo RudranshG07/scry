@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -61,8 +62,27 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	return m, nil
 }
 
+const (
+	// How far back settled markets stay on the board. Long enough to see what
+	// just happened, short enough that the list is about now.
+	recentWindow = "6 hours"
+	// A hard ceiling so one long-running stream cannot bury the rest.
+	listLimit = 60
+)
+
+// ListMarkets returns what is live plus what settled recently.
+//
+// It used to select every market ever opened. After a day of running that was
+// 310 rows, 292 of them invalidated, and the three live markets were buried
+// under weeks of dead ones. The board is meant to answer "what can I watch and
+// take a side on now", and an unbounded history answers a different question
+// while getting slower every hour.
 func (s *Postgres) ListMarkets(ctx context.Context) ([]domain.Market, error) {
-	rows, err := s.pool.Query(ctx, marketQuery+` ORDER BY m.opens_at DESC`)
+	rows, err := s.pool.Query(ctx, marketQuery+`
+		WHERE m.status IN ('Scheduled', 'Open', 'Locked', 'Observing', 'Result proposed')
+		   OR m.observation_ends_at > NOW() - INTERVAL '`+recentWindow+`'
+		ORDER BY m.opens_at DESC
+		LIMIT `+strconv.Itoa(listLimit))
 	if err != nil {
 		return nil, fmt.Errorf("query markets: %w", err)
 	}

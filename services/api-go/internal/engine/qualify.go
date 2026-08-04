@@ -9,25 +9,16 @@ import (
 )
 
 const (
-	// Enough windows that one unlucky truck cannot suspend a camera, few enough
-	// that a camera which has gone bad stops hosting markets the same evening.
-	minWindows = 4
-	// Share of recent windows where the observers had to agree. Below this the
-	// stream cannot settle reliably, whatever its uptime looks like.
+	minWindows   = 4
 	minAgreement = 0.75
-	// A suspended stream stops being scheduled, so it stops producing the very
-	// windows it would need to earn its way back. Without a way out that is a
-	// one-way door. Most of what ruins a camera -- sun angle, fog, rain, a lens
-	// nobody has cleaned -- passes on a scale of hours, so it gets another try.
+	// Suspension stops scheduling, which stops the windows needed to recover.
 	probation = 2 * time.Hour
 )
 
 type window struct{ lo, hi int64 }
 
-// qualify decides which streams are still fit to settle money. Uptime and
-// contrast only say the footage arrived; this asks whether two independent
-// observers watching it could actually agree, which is the thing a result
-// rests on. A stream that fails is suspended and stops being scheduled.
+// qualify suspends streams whose observers cannot agree. Uptime and contrast
+// only say the footage arrived; a result rests on two of them agreeing.
 func (e *Engine) qualify(ctx context.Context) error {
 	if err := e.unsourced(ctx); err != nil {
 		return err
@@ -36,9 +27,8 @@ func (e *Engine) qualify(ctx context.Context) error {
 		return err
 	}
 
-	// Only windows observed since the last decision count. A stream reinstated
-	// off probation would otherwise be judged on the same old readings that got
-	// it suspended and go straight back down without ever being watched again.
+	// Only windows since the last decision, or a reinstated stream is judged on
+	// the readings that suspended it.
 	rows, err := e.pool.Query(ctx, `
 		WITH w AS (
 		    SELECT m.stream_id,
@@ -99,9 +89,8 @@ func (e *Engine) qualify(ctx context.Context) error {
 	return nil
 }
 
-// verdict reports the status these windows argue for. The third return is false
-// when there is not yet enough history to judge, which is not the same as a
-// pass: a stream nobody has observed has proved nothing either way.
+// verdict returns false when there is not enough history to judge, which is not
+// the same as a pass.
 func verdict(ws []window) (string, int, bool) {
 	if len(ws) < minWindows {
 		return "", 0, false
@@ -118,10 +107,8 @@ func verdict(ws []window) (string, int, bool) {
 	return "Qualified", agreed, true
 }
 
-// unsourced sends streams with no playback source back to Candidate. Qualified
-// is a claim that a stream is fit to host markets, and one nobody can watch is
-// not: the scheduler already skips it, so it would sit there qualified forever
-// and never publish anything.
+// unsourced demotes streams nobody can watch, which would sit Qualified forever
+// and never publish.
 func (e *Engine) unsourced(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE streams SET status = 'Candidate', updated_at = NOW()
@@ -143,8 +130,7 @@ func (e *Engine) unsourced(ctx context.Context) error {
 	return rows.Err()
 }
 
-// reinstate gives a suspended stream another chance once probation is up. It
-// clears the window history along with it, so the stream is judged on what it
+// reinstate clears the window history too, so a stream is judged on what it
 // does next rather than on why it was suspended.
 func (e *Engine) reinstate(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `

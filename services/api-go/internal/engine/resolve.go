@@ -14,17 +14,13 @@ import (
 const (
 	// Two of three observers must land on the same number for a result to stand.
 	minObservers = 2
-	// Agreement is proportional: counters drift with traffic volume, so a fixed
-	// margin is far too tight at 200 vehicles and far too loose at 5. Five per
-	// cent matches the counting error the stream qualification gate accepts.
+	// Proportional: a fixed margin is too tight at 200 and too loose at 5.
 	tolerancePercent = 0.05
-	// Below this, percentages are meaningless and a couple of vehicles is noise.
-	toleranceFloor = 2
+	toleranceFloor   = 2
 	// How long anyone has to challenge a proposed result.
 	challengeWindow = 10 * time.Minute
-	// An observer covers the window to its last second, so its report is only
-	// ever in flight once the window has closed. Resolving the moment the clock
-	// runs out would throw away every report that did its job properly.
+	// An observer covers the window to its last second, so its report is only in
+	// flight once the window has closed.
 	reportGrace = 60 * time.Second
 )
 
@@ -34,8 +30,7 @@ type band struct {
 }
 
 // propose closes observation and either publishes a result or voids the market.
-// A market with no quorum is invalid, not zero — refusing to answer is a valid
-// outcome and the safest one.
+// No quorum means invalid, not zero.
 func (e *Engine) propose(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT id FROM markets
@@ -83,7 +78,6 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 	}
 	outcome, ok := winner(value, bands)
 	if !ok {
-		// A count nothing covers means the rule and the reading disagree.
 		return e.invalidate(ctx, id, len(counts))
 	}
 
@@ -120,11 +114,8 @@ func (e *Engine) invalidate(ctx context.Context, id string, reporting int) error
 	return nil
 }
 
-// evidenceRoot picks the bundle belonging to an observer who actually reported
-// the settled value. Publishing the root of an observer who read something else
-// would point every later proof at intervals that do not add up to the result.
-// A result whose evidence cannot be identified is published without one rather
-// than with somebody else's.
+// evidenceRoot takes the bundle of an observer who reported the settled value;
+// anyone else's would point later proofs at intervals that do not add up.
 func (e *Engine) evidenceRoot(ctx context.Context, id string, value int64) (*string, error) {
 	var root *string
 	err := e.pool.QueryRow(ctx, `
@@ -188,9 +179,8 @@ func allowedSpread(base int64) int64 {
 	return max(toleranceFloor, scaled)
 }
 
-// consensus finds the largest group of observers who agree with each other and
-// returns their median. Outliers are dropped rather than averaged in, so one
-// broken camera cannot drag the result.
+// consensus returns the median of the largest agreeing group. Outliers are
+// dropped rather than averaged in.
 func consensus(counts []int64, need int) (int64, bool) {
 	if len(counts) < need {
 		return 0, false
@@ -220,8 +210,7 @@ func consensus(counts []int64, need int) (int64, bool) {
 	return best[len(best)/2], true
 }
 
-// winner picks the outcome whose band contains the value. Exactly one must
-// match: overlapping or gapped bands are a rule the market cannot settle.
+// winner picks the outcome whose band contains the value; exactly one must match.
 func winner(value int64, bands []band) (string, bool) {
 	var found string
 	hits := 0
