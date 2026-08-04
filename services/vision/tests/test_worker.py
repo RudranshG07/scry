@@ -372,6 +372,31 @@ class OccupancyTest(unittest.TestCase):
         # over a fifteen minute window cannot notice.
         self.assertLessEqual(STRIDE, 5)
 
+class SubmissionTest(unittest.TestCase):
+    """Anyone can paste a link, so a stream qualifies on its own evidence and
+    nothing waits on a human choosing a subject or a threshold."""
+
+    def test_a_stream_too_slow_to_keep_up_is_refused(self):
+        from scry_vision.qualify import MIN_REALTIME
+        self.assertGreaterEqual(MIN_REALTIME, 3.0)
+
+    def test_a_quiet_scene_is_flagged_rather_than_trusted(self):
+        # At six subjects one person is 17%, well past the 5% settlement bar,
+        # so the result would turn on rounding.
+        from scry_vision.qualify import MIN_FOR_PERCENT
+        self.assertGreaterEqual(MIN_FOR_PERCENT, 20.0)
+        self.assertLess(1 / MIN_FOR_PERCENT, 0.05)
+
+    def test_models_that_disagree_wildly_disqualify_the_scene(self):
+        from scry_vision.qualify import MAX_DISAGREEMENT
+        self.assertLessEqual(MAX_DISAGREEMENT, 0.2)
+
+    def test_a_verdict_always_carries_a_reason(self):
+        from scry_vision.qualify import Verdict
+        v = Verdict("https://example/live", False, "could not find a live stream")
+        self.assertTrue(v.reason)
+        self.assertFalse(v.usable)
+
 
 if __name__ == "__main__":
     unittest.main()

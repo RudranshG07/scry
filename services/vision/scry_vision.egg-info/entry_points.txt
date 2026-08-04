@@ -1,0 +1,2 @@
+[console_scripts]
+scry-vision = scry_vision.cli:main
