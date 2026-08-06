@@ -39,6 +39,11 @@ func (e *Engine) schedule(ctx context.Context) error {
 		  -- it could only ever invalidate. Do not open one. An unset source
 		  -- reaches us as both NULL and empty text, and empty passes IS NOT NULL.
 		  AND coalesce(btrim(s.public_playback_id), '') <> ''
+		  -- On a quiet camera a single subject moves the count by more than the
+		  -- agreement bar, so a result there turns on rounding rather than on
+		  -- what anyone observed. The stream stays watchable; it just does not
+		  -- take positions until there is enough happening to settle honestly.
+		  AND coalesce((s.qualification->>'provisional')::boolean, false) = false
 		  AND NOT EXISTS (
 		      SELECT 1 FROM markets m
 		      WHERE m.stream_id = s.id
