@@ -12,3 +12,12 @@ __all__ = [
     "TrackSample",
     "execute_counting",
 ]
+
+from .claims import register as _register  # noqa: E402
+from .crossings import Crossings  # noqa: E402
+from .objects import Objects  # noqa: E402
+from .phrases import Phrases  # noqa: E402
+
+_register(Crossings())
+_register(Objects())
+_register(Phrases())

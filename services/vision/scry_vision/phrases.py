@@ -1,0 +1,134 @@
+"""Counts how often something is said on a stream.
+
+The claim names the words. Audio is pulled with ffmpeg, transcribed with
+Whisper, and each match is kept with the second it happened at, so the evidence
+is a transcript anyone can check against the recording rather than a hash they
+have to take on faith.
+
+Two sizes of model stand in for two observers, the same way two detector weights
+do for vision: they disagree on mumbled or overlapping speech, which is the
+disagreement the quorum exists to catch.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from functools import lru_cache
+
+from .claims import Claim, Reading
+
+# Whisper works on 16k mono, and pulling anything larger is wasted bandwidth.
+SAMPLE_RATE = 16_000
+
+
+@dataclass(frozen=True)
+class Ear:
+    name: str
+    size: str
+
+    @property
+    def version(self) -> str:
+        return f"whisper-{self.size}/1.0-{self.name}"
+
+
+PRIMARY = Ear(name="primary", size="small")
+VERIFY = Ear(name="verify", size="base")
+
+EARS = {"primary_vision": PRIMARY, "verification": VERIFY, "edge": VERIFY}
+
+
+@lru_cache(maxsize=4)
+def _load(size: str):
+    from faster_whisper import WhisperModel
+
+    return WhisperModel(size, device="cpu", compute_type="int8")
+
+
+def normalise(text: str) -> str:
+    """Strip everything a speaker cannot be held to.
+
+    Punctuation and case are the transcriber's choices, not the speaker's, so
+    "Hello, guys!" and "hello guys" are the same utterance and must not depend
+    on which model heard it.
+    """
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+
+
+def occurrences(text: str, target: str) -> int:
+    """How many times the target is said in this text.
+
+    Counted on word boundaries so "hello guys" does not fire inside
+    "othello guysborough", and overlapping matches are not double counted.
+    """
+    words = normalise(text).split()
+    wanted = normalise(target).split()
+    if not wanted or len(words) < len(wanted):
+        return 0
+
+    hits = 0
+    index = 0
+    while index <= len(words) - len(wanted):
+        if words[index:index + len(wanted)] == wanted:
+            hits += 1
+            index += len(wanted)
+        else:
+            index += 1
+    return hits
+
+
+def pull_audio(url: str, seconds: float) -> str | None:
+    """Grab the audio track alone. Video is the majority of the bytes and none
+    of the signal for a phrase."""
+    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    handle.close()
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-t", str(seconds), "-i", url,
+         "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), handle.name],
+        capture_output=True, timeout=seconds * 4 + 60,
+    )
+    return handle.name if result.returncode == 0 else None
+
+
+class Phrases:
+    kind = "phrase"
+
+    def supports(self, claim: Claim) -> bool:
+        return bool(normalise(claim.target))
+
+    def qualify(self, url: str, claim: Claim, seconds: float = 45) -> tuple[bool, str]:
+        reading = self.observe(url, claim, seconds, "primary_vision")
+        if reading.detail.get("words", 0) == 0:
+            return False, "no speech was heard on this stream"
+        if reading.count == 0:
+            # Speech is there and the phrase is not. A market on it settles at
+            # zero every window, which is worth saying now rather than later.
+            return False, f'nobody said "{claim.target}" while listening'
+        return True, f'"{claim.target}" said {reading.count} times in {seconds:.0f}s'
+
+    def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
+        audio = pull_audio(url, seconds)
+        if audio is None:
+            return Reading(0, [], {"reason": "no audio track"})
+
+        ear = EARS[role]
+        segments, _ = _load(ear.size).transcribe(audio, language=claim.options.get("language"))
+
+        said: list[dict] = []
+        words = 0
+        for segment in segments:
+            words += len(normalise(segment.text).split())
+            for _ in range(occurrences(segment.text, claim.target)):
+                said.append({
+                    "at": round(segment.start, 2),
+                    "heard": segment.text.strip(),
+                    "modelVersion": ear.version,
+                })
+
+        return Reading(
+            count=len(said),
+            samples=said,
+            detail={"words": words, "model": ear.version},
+        )
