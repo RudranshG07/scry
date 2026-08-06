@@ -40,6 +40,24 @@ type Market struct {
 	Trend               []float64       `json:"trend"`
 }
 
+// StreamSource is a submitted link and what the last inspection made of it.
+type StreamSource struct {
+	ID        string `json:"id"`
+	SourceURL string `json:"sourceUrl"`
+	Status    string `json:"status"`
+}
+
+// Qualification is what watching a stream established about it.
+type Qualification struct {
+	Usable       bool    `json:"usable"`
+	Reason       string  `json:"reason"`
+	Counts       string  `json:"counts"`
+	Subjects     float64 `json:"subjects"`
+	Peak         int     `json:"peak"`
+	Disagreement float64 `json:"disagreement"`
+	Provisional  bool    `json:"provisional"`
+}
+
 type Observer struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`

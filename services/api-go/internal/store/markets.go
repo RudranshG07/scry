@@ -198,7 +198,7 @@ func balance(os []domain.MarketOutcome) []domain.MarketOutcome {
 	}
 	os[len(os)-1].Probability = 100 - used
 	return os
-}
+} 
 
 func (s *Postgres) trends(ctx context.Context, ids []string) (map[string][]float64, error) {
 	rows, err := s.pool.Query(ctx, `

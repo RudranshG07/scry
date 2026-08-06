@@ -19,7 +19,8 @@
     "calibrate": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.calibrate",
     "stack": "./scripts/stack.sh",
     "verify:ui": "./scripts/verify-ui.sh",
-    "qualify": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.qualify"
+    "qualify": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.qualify",
+    "inspect": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.inspector"
   },
   "dependencies": {
     "hls.js": "1.6.16",
