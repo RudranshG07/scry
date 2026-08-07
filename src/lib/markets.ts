@@ -346,21 +346,29 @@ export function marketClip(id: string) {
 
 // Cameras belong to a stream, not to a market: a stream outlives the markets
 // scheduled on it. Keyed by stream id so the API's streamId resolves directly.
-const CALTRANS = "https://wzmedia.dot.ca.gov";
-const PACIFIC = "America/Los_Angeles";
+//
+// Caltrans was the whole pool and is gone from it. The manifests still parse, so
+// every probe called them healthy, while segments arrived at 0.6 Mbit/s against
+// a 2.1 Mbit/s stream — the player buffered forever and showed nothing. These
+// are CDN-backed and carry six bitrates, so a thin connection drops to 144p
+// instead of stalling.
+const YOUTUBE = "https://www.youtube.com/watch?v=";
 
 export const streamSourcePool: Record<string, Array<{ url: string; name: string; timeZone: string }>> = {
+  "stream-london-abbey": [
+    { url: `${YOUTUBE}M3EYAY2MftI`, name: "Abbey Road Crossing, London", timeZone: "Europe/London" },
+  ],
   "stream-sd-5-28th": [
-    { url: `${CALTRANS}/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8`, name: "C23 · SB I-5 at 28th St, San Diego", timeZone: PACIFIC },
-    { url: `${CALTRANS}/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8`, name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: PACIFIC },
+    { url: `${YOUTUBE}9KinvEHYcZc`, name: "Calea Victoriei, Bucharest", timeZone: "Europe/Bucharest" },
+    { url: `${YOUTUBE}M3EYAY2MftI`, name: "Abbey Road Crossing, London", timeZone: "Europe/London" },
   ],
   "stream-sd-8-taylor": [
-    { url: `${CALTRANS}/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8`, name: "C6 · EB I-8 at Taylor St, San Diego", timeZone: PACIFIC },
-    { url: `${CALTRANS}/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8`, name: "C57 · WB I-8 at I-15, San Diego", timeZone: PACIFIC },
+    { url: `${YOUTUBE}2juLrCH5w9U`, name: "Ohio 741 at 73", timeZone: "America/New_York" },
+    { url: `${YOUTUBE}9KinvEHYcZc`, name: "Calea Victoriei, Bucharest", timeZone: "Europe/Bucharest" },
   ],
   "stream-sd-8-15": [
-    { url: `${CALTRANS}/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8`, name: "C57 · WB I-8 at I-15, San Diego", timeZone: PACIFIC },
-    { url: `${CALTRANS}/D7/CCTV-262.stream/playlist.m3u8`, name: "CAM 262 · N710 s/o PCH, Long Beach", timeZone: PACIFIC },
+    { url: `${YOUTUBE}Evt_Jy3vh9I`, name: "Cedar Corner Roundabout", timeZone: "America/New_York" },
+    { url: `${YOUTUBE}2juLrCH5w9U`, name: "Ohio 741 at 73", timeZone: "America/New_York" },
   ],
 };
 

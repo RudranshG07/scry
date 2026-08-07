@@ -1,4 +1,6 @@
 import { clipFor, sourcesFor, streamKeyFor } from "@/lib/markets";
+import { proxyPath } from "@/lib/streams/signing";
+import { resolveUpstream } from "@/lib/streams/upstream";
 
 export type ResolvedStream = {
   url: string;
@@ -9,10 +11,18 @@ export type ResolvedStream = {
   daylight?: boolean;
 };
 
-const probeTimeoutMs = 4000;
-const cacheTtlMs = 20_000;
+export const dynamic = "force-dynamic";
+
+const probeTimeoutMs = 12_000;
+const cacheTtlMs = 120_000;
 const daylightStartHour = 7;
 const daylightEndHour = 19;
+
+// A segment has to arrive faster than it plays or the buffer drains. Caltrans
+// managed 0.6 of realtime and the manifest looked perfectly healthy the whole
+// time, so playability is measured in bytes per second, not in whether the
+// playlist parses.
+const minimumRealtime = 1.1;
 
 const cache = new Map<string, { at: number; value: ResolvedStream }>();
 
@@ -40,25 +50,61 @@ async function fetchText(url: string) {
   return response.text();
 }
 
-function playlistEntries(body: string) {
+function entries(body: string) {
   return body
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
-async function isPlayable(playlistUrl: string) {
+function segmentSeconds(body: string) {
+  const match = body.match(/#EXTINF:\s*([0-9.]+)/);
+  return match ? Number.parseFloat(match[1]) : 0;
+}
+
+async function measure(segmentUrl: string, covers: number) {
+  const started = Date.now();
+  const response = await fetch(segmentUrl, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(probeTimeoutMs),
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; ScryStreamProbe/1.0)" },
+  });
+  if (!response.ok) return 0;
+  await response.arrayBuffer();
+  const elapsed = (Date.now() - started) / 1000;
+  return elapsed > 0 ? covers / elapsed : 0;
+}
+
+/**
+ * Walks a manifest to a real segment and times it. A master playlist is probed
+ * at its lowest bitrate: that is the one hls.js falls back to when the
+ * connection is thin, so if it cannot keep up, none of the others will either.
+ */
+async function isPlayable(manifestUrl: string) {
   try {
-    const body = await fetchText(playlistUrl);
+    const body = await fetchText(manifestUrl);
     if (!body?.startsWith("#EXTM3U")) return false;
 
-    const entries = playlistEntries(body);
-    if (entries.length === 0) return false;
-    if (!/\.m3u8(?:$|[?#])/i.test(entries[0])) return true;
+    const listed = entries(body);
+    if (listed.length === 0) return false;
 
-    const chunklist = await fetchText(new URL(entries[0], new URL(playlistUrl)).toString());
-    if (!chunklist?.startsWith("#EXTM3U")) return false;
-    return playlistEntries(chunklist).some((entry) => /\.(ts|m4s|mp4)(?:$|[?#])/i.test(entry));
+    let media = body;
+    let mediaUrl = manifestUrl;
+    if (/\.m3u8(?:$|[?#])/i.test(listed[0])) {
+      mediaUrl = new URL(listed[listed.length - 1], manifestUrl).toString();
+      const variant = await fetchText(mediaUrl);
+      if (!variant?.startsWith("#EXTM3U")) return false;
+      media = variant;
+    }
+
+    const segments = entries(media).filter((entry) => /\.(ts|m4s|mp4)(?:$|[?#])/i.test(entry));
+    if (segments.length === 0) return false;
+
+    const covers = segmentSeconds(media);
+    if (covers <= 0) return false;
+
+    const rate = await measure(new URL(segments[0], mediaUrl).toString(), covers);
+    return rate >= minimumRealtime;
   } catch {
     return false;
   }
@@ -94,15 +140,20 @@ export async function GET(_request: Request, context: { params: Promise<{ market
   const dark = sources.filter((source) => !isDaylight(source.timeZone));
 
   for (const source of [...daylit, ...dark]) {
-    if (await isPlayable(source.url)) {
-      return finish({
-        url: source.url,
-        name: source.name,
-        kind: "hls",
-        live: true,
-        daylight: isDaylight(source.timeZone),
-      });
-    }
+    const upstream = await resolveUpstream(source.url);
+    if (!upstream) continue;
+    if (!(await isPlayable(upstream.manifest))) continue;
+
+    // Proxied, not handed over directly. These hosts answer a plain GET but
+    // send no access-control-allow-origin, and hls.js reads every manifest and
+    // segment with fetch, so the browser refuses all of them cross-origin.
+    return finish({
+      url: proxyPath(upstream.manifest),
+      name: source.name,
+      kind: "hls",
+      live: true,
+      daylight: isDaylight(source.timeZone),
+    });
   }
 
   const clip = clipFor(marketId);
