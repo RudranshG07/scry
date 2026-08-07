@@ -6,7 +6,7 @@ const directory = new URL("../database/migrations/", import.meta.url);
 
 test("database migrations are ordered transactions without inline comments", () => {
   const names = readdirSync(directory).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names, ["001_core.sql", "002_timeseries.sql", "003_operations.sql", "004_reputation.sql", "005_evidence.sql", "006_auth.sql", "007_submitted_streams.sql"]);
+  assert.deepEqual(names, ["001_core.sql", "002_timeseries.sql", "003_operations.sql", "004_reputation.sql", "005_evidence.sql", "006_auth.sql", "007_submitted_streams.sql", "008_claims.sql"]);
   for (const name of names) {
     const sql = readFileSync(new URL(name, directory), "utf8");
     assert.match(sql, /^BEGIN;/);

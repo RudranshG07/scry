@@ -15,6 +15,7 @@ import (
 const marketQuery = `
 	SELECT m.id, m.stream_id, s.category, s.name, s.region, m.question, m.status,
 	       m.chain_id, m.contract_address,
+	       m.claim_kind, m.claim_target, m.claim_options,
 	       m.opens_at, m.locks_at, m.observation_starts_at, m.observation_ends_at, m.challenge_ends_at,
 	       m.observed_value, m.winning_outcome_id,
 	       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
@@ -42,6 +43,7 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	err := row.Scan(
 		&m.ID, &m.StreamID, &m.Category, &m.Location, &m.City, &m.Question, &m.Status,
 		&m.ChainID, &m.ContractAddress,
+		&m.Claim.Kind, &m.Claim.Target, &m.Claim.Options,
 		&opens, &locks, &starts, &ends, &challenge,
 		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool, &ai,
 		&m.CurrentRate, &m.Baseline,
@@ -198,7 +200,7 @@ func balance(os []domain.MarketOutcome) []domain.MarketOutcome {
 	}
 	os[len(os)-1].Probability = 100 - used
 	return os
-} 
+}
 
 func (s *Postgres) trends(ctx context.Context, ids []string) (map[string][]float64, error) {
 	rows, err := s.pool.Query(ctx, `

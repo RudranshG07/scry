@@ -50,6 +50,22 @@ class ObserverTest(unittest.TestCase):
         self.assertFalse(observer.supports(Claim("s", "phrase", "   ")))
         self.assertFalse(observer.supports(Claim("s", "phrase", "!!!")))
 
+class EvidenceTest(unittest.TestCase):
+    """Evidence travels to the API as json, so anything that cannot serialise
+    breaks settlement rather than the transcription."""
+
+    def test_a_sample_survives_json(self):
+        import json
+        sample = {"at": 10.22, "heard": "hello guys, welcome back",
+                  "modelVersion": "whisper-small/1.0-primary"}
+        self.assertEqual(json.loads(json.dumps(sample))["at"], 10.22)
+
+    def test_every_match_gets_its_own_moment(self):
+        # Segment timestamps gave three occurrences the same second, which is a
+        # summary rather than something anyone can scrub to and check.
+        times = [10.22, 19.82, 29.82, 30.66]
+        self.assertEqual(len(set(times)), len(times))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,18 +114,34 @@ class Phrases:
             return Reading(0, [], {"reason": "no audio track"})
 
         ear = EARS[role]
-        segments, _ = _load(ear.size).transcribe(audio, language=claim.options.get("language"))
+        # Word timestamps, not segment ones: three utterances inside one segment
+        # otherwise share its start time, and evidence nobody can scrub to is
+        # not evidence.
+        segments, _ = _load(ear.size).transcribe(
+            audio, language=claim.options.get("language"), word_timestamps=True)
 
         said: list[dict] = []
         words = 0
+        wanted = normalise(claim.target).split()
+
         for segment in segments:
-            words += len(normalise(segment.text).split())
-            for _ in range(occurrences(segment.text, claim.target)):
-                said.append({
-                    "at": round(segment.start, 2),
-                    "heard": segment.text.strip(),
-                    "modelVersion": ear.version,
-                })
+            # float(), because whisper hands back numpy scalars and those do not
+            # survive json, which is how evidence reaches the API.
+            spoken = [(normalise(w.word).strip(), float(w.start)) for w in (segment.words or [])]
+            spoken = [(word, at) for word, at in spoken if word]
+            words += len(spoken) or len(normalise(segment.text).split())
+
+            index = 0
+            while index <= len(spoken) - len(wanted):
+                if [word for word, _ in spoken[index:index + len(wanted)]] == wanted:
+                    said.append({
+                        "at": round(spoken[index][1], 2),
+                        "heard": segment.text.strip(),
+                        "modelVersion": ear.version,
+                    })
+                    index += len(wanted)
+                else:
+                    index += 1
 
         return Reading(
             count=len(said),

@@ -2,6 +2,16 @@ package domain
 
 import "time"
 
+// Claim is what a market counts. The kind decides which observer runs, so a new
+// kind of countable thing needs an observer and nothing else.
+type Claim struct {
+	Kind    string         `json:"kind"`
+	Target  string         `json:"target"`
+	Options map[string]any `json:"options,omitempty"`
+}
+
+func (c Claim) Label() string { return c.Kind + ":" + c.Target }
+
 type MarketOutcome struct {
 	ID          string  `json:"id"`
 	Label       string  `json:"label"`
