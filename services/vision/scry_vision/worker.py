@@ -49,6 +49,35 @@ def at(market: dict, field: str) -> datetime:
     return datetime.fromisoformat(market[field].replace("Z", "+00:00"))
 
 
+def claim_of(market: dict, stream: str):
+    """What this market counts, defaulting to whatever crosses the line."""
+    from .claims import Claim
+
+    raw = market.get("claim") or {}
+    return Claim(
+        stream_id=stream,
+        kind=raw.get("kind", "crossings"),
+        target=raw.get("target", "anything"),
+        options=raw.get("options") or {},
+    )
+
+
+def as_report(reading, seconds: float) -> dict:
+    """Shape a reading the way the API expects a report."""
+    return {
+        "ok": True,
+        "count": reading.count,
+        "uptime": 1.0,
+        "visibility": 1.0,
+        "frozenSeconds": 0.0,
+        "frames": reading.detail.get("frames", 0),
+        "elapsed": seconds,
+        "modelVersion": reading.detail.get("model", "unknown"),
+        "evidenceRoot": "",
+        "counts": reading.samples,
+    }
+
+
 def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
     """The stretch of time every observer on this market counts, so two counts
     cover the same seconds and are comparable."""
@@ -60,12 +89,11 @@ def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
 def run(api: str, stream: str, camera: str, market_id: str | None, observer: str,
         role: str, cap: float, poll: float) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
-    from .observer import observe, submit
-    from .occupancy import occupancy_for
-    from .scenes import scene_for
+    import scry_vision  # noqa: F401  registers the observers
+    from .claims import Claim, observer_for
+    from .observer import submit
 
-    scene = scene_for(stream)
-    print(f"watching {stream}: counting {scene.unit} in view as {role}", flush=True)
+    print(f"watching {stream} as {role}", flush=True)
     done: set[str] = set()
 
     while True:
@@ -107,7 +135,17 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
 
         left = (closes - now).total_seconds()
         print(f"observing {market['id']} on {stream} for {left:.0f}s as {role}", flush=True)
-        result = observe(camera, scene, seconds=left, role=role)
+        claim = claim_of(market, stream)
+        watcher = observer_for(claim)
+        if watcher is None:
+            # Nothing here can count this, and guessing with the nearest
+            # observer would settle the market on the wrong thing entirely.
+            print(f"no observer for {claim.label}, skipping {market['id']}", flush=True)
+            done.add(market["id"])
+            continue
+
+        reading = watcher.observe(camera, claim, left, role)
+        result = as_report(reading, left)
         print("  " + json.dumps({k: v for k, v in result.items() if k != "counts"}), flush=True)
 
         status, body = submit(api, market["id"], observer, role, result)

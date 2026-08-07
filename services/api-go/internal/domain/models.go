@@ -35,6 +35,7 @@ type Market struct {
 	Baseline    float64 `json:"baseline"`
 	Observers   int     `json:"observers"`
 	ChainID     int64   `json:"chainId"`
+	Claim       Claim   `json:"claim"`
 	// Nil until the market has been deployed. Positions are only real once there
 	// is a contract holding the collateral, so the client uses this to tell a
 	// live market from one that exists in the database alone.

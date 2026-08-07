@@ -40,7 +40,7 @@ class Objects:
 
         capture = cv2.VideoCapture(url)
         if not capture.isOpened():
-            return Reading(0, [], {"reason": "stream unreachable"})
+            return Reading(0, [], detail={"reason": "stream unreachable"})
 
         counts: list[int] = []
         frames = 0

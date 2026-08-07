@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from .claims import Claim, Reading
 from .counter import CountLineTracker
 from .detector import MODELS, _load
+from .evidence import bundle, chain, digest, stamp
+from .health import Health
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
 
 # COCO classes worth counting on a road or a pavement.
@@ -86,7 +88,7 @@ class Crossings:
 
         line = line_from(claim)
         if line is None:
-            return Reading(0, [], {"reason": "no line"})
+            return Reading(0, [], detail={"reason": "no line"})
 
         model = MODELS[role]
         yolo = _load(model.weights)
@@ -115,17 +117,35 @@ class Crossings:
 
         capture = cv2.VideoCapture(url)
         if not capture.isOpened():
-            return Reading(0, [], {"reason": "stream unreachable"})
+            return Reading(0, [], detail={"reason": "stream unreachable"})
 
-        deadline = datetime.now(UTC).timestamp() + seconds
+        started = datetime.now(UTC)
+        deadline = started.timestamp() + seconds
+        health = Health()
         frames = 0
         seen = 0
+        last_position: float | None = None
+        chained = digest(f"{url}|{started.isoformat()}".encode())
+        samples: list[dict] = []
+        bucket_started = started
+        bucket_base = 0
 
         while datetime.now(UTC).timestamp() < deadline:
             ok, frame = capture.read()
             if not ok:
+                health.dropped += 1
                 continue
             frames += 1
+
+            # Gaps in the footage, not in arrival: HLS hands over a segment at a
+            # time, so frames burst with silence between while missing nothing.
+            position = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            if position > 0 and last_position is not None:
+                health.saw_frame(max(0.0, position - last_position))
+            if position > 0:
+                last_position = position
+            health.frames += 1
+            chained = chain(chained, frame.tobytes())
 
             # Native frame, not a downscaled one: resizing before inference cost
             # roughly seven eighths of the detections here.
@@ -156,11 +176,39 @@ class Crossings:
                 if backward is not None:
                     backward.ingest(sample)
 
-        capture.release()
+            now_at = datetime.now(UTC)
+            if (now_at - bucket_started).total_seconds() >= 60:
+                running = forward.count + (backward.count if backward else 0)
+                samples.append({
+                    "observedAt": stamp(bucket_started),
+                    "count": running - bucket_base,
+                    "intervalSeconds": int((now_at - bucket_started).total_seconds()),
+                    "streamQuality": round(health.visibility() or 1.0, 4),
+                    "modelVersion": model.version,
+                    "frameDigest": chained,
+                })
+                bucket_base = running
+                bucket_started = now_at
 
+        capture.release()
+        elapsed = (datetime.now(UTC) - started).total_seconds()
         count = forward.count + (backward.count if backward else 0)
+
+        tail = (datetime.now(UTC) - bucket_started).total_seconds()
+        if tail >= 1:
+            samples.append({
+                "observedAt": stamp(bucket_started),
+                "count": count - bucket_base,
+                "intervalSeconds": int(tail),
+                "streamQuality": round(health.visibility() or 1.0, 4),
+                "modelVersion": model.version,
+                "frameDigest": chained,
+            })
+
         return Reading(
             count=count,
-            samples=[],
+            samples=samples,
+            uptime=round(health.uptime(elapsed), 4),
+            evidence_root=bundle(samples)[0],
             detail={"frames": frames, "seen": seen, "model": model.version},
         )

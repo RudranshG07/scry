@@ -111,7 +111,7 @@ class Phrases:
     def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
         audio = pull_audio(url, seconds)
         if audio is None:
-            return Reading(0, [], {"reason": "no audio track"})
+            return Reading(0, [], detail={"reason": "no audio track"})
 
         ear = EARS[role]
         # Word timestamps, not segment ones: three utterances inside one segment

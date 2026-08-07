@@ -55,6 +55,28 @@ class ClaimTest(unittest.TestCase):
         self.assertEqual(Claim("s", "crossings", "car"), Claim("s", "crossings", "car"))
         self.assertNotEqual(Claim("s", "crossings", "car"), Claim("s", "crossings", "bus"))
 
+class ReadingTest(unittest.TestCase):
+    """uptime and evidence are not optional extras: a count over gappy footage
+    is a different claim from one over a whole window."""
+
+    def test_a_failed_reading_reports_no_coverage_rather_than_full(self):
+        # Defaulting uptime to 1.0 would let a stream that never opened settle
+        # a market, which is the coverage gate defeating itself.
+        r = Reading(0, [], detail={"reason": "stream unreachable"})
+        self.assertEqual(r.uptime, 0.0)
+        self.assertEqual(r.evidence_root, "")
+
+    def test_detail_is_a_keyword_so_field_order_cannot_silently_shift_it(self):
+        r = Reading(0, [], detail={"reason": "x"})
+        self.assertEqual(r.detail["reason"], "x")
+        self.assertIsInstance(r.uptime, float)
+
+    def test_a_good_reading_carries_both(self):
+        r = Reading(12, [{"count": 12}], uptime=1.0, evidence_root="0xabc")
+        self.assertEqual(r.count, 12)
+        self.assertEqual(r.uptime, 1.0)
+        self.assertTrue(r.evidence_root)
+
 
 if __name__ == "__main__":
     unittest.main()

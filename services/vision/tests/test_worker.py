@@ -397,6 +397,35 @@ class SubmissionTest(unittest.TestCase):
         self.assertTrue(v.reason)
         self.assertFalse(v.usable)
 
+class ClaimRoutingTest(unittest.TestCase):
+    """A market says what it counts. Falling back to the nearest observer would
+    settle a phrase market on whatever the camera happened to see."""
+
+    def test_a_market_without_a_claim_still_counts_crossings(self):
+        from scry_vision.worker import claim_of
+        c = claim_of({"id": "m"}, "some-stream")
+        self.assertEqual(c.kind, "crossings")
+        self.assertEqual(c.target, "anything")
+
+    def test_a_phrase_market_keeps_its_words(self):
+        from scry_vision.worker import claim_of
+        c = claim_of({"claim": {"kind": "phrase", "target": "hello guys"}}, "ishowspeed")
+        self.assertEqual(c.label, "phrase:hello guys")
+
+    def test_options_reach_the_observer(self):
+        from scry_vision.worker import claim_of
+        line = [[0.1, 0.7], [0.9, 0.7]]
+        c = claim_of({"claim": {"kind": "crossings", "target": "car",
+                                "options": {"line": line}}}, "road-cam")
+        self.assertEqual(c.options["line"], line)
+
+    def test_the_claim_is_bound_to_the_stream_being_watched(self):
+        # An observer watches one camera; a claim from elsewhere would attribute
+        # a count to a place nobody looked at.
+        from scry_vision.worker import claim_of
+        self.assertEqual(claim_of({"claim": {"kind": "phrase", "target": "x"}}, "abbey").stream_id,
+                         "abbey")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,10 +30,19 @@ class Claim:
 
 @dataclass(frozen=True)
 class Reading:
-    """What an observer made of one window."""
+    """What an observer made of one window.
+
+    uptime and evidence are not optional. A count over footage full of gaps is
+    not the same claim as a count over a whole window, and a result nobody can
+    check afterwards is the thing this product exists not to publish.
+    """
 
     count: int
     samples: list[dict]
+    # Share of the window actually observed. Anything below the resolver's floor
+    # is refused before consensus looks at it.
+    uptime: float = 0.0
+    evidence_root: str = ""
     detail: dict = field(default_factory=dict)
 
 
