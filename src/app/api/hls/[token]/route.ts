@@ -14,6 +14,27 @@ function absolute(reference: string, base: string) {
   }
 }
 
+// A live window only needs the segments around the live edge. YouTube serves a
+// four hour DVR playlist, and signing each of its 2227 entries produced a 3.5MB
+// manifest that hls.js refetches every couple of seconds — enough on its own to
+// starve the video it was meant to deliver.
+const liveWindow = 20;
+
+function rewriteLine(line: string, base: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return line;
+
+  if (trimmed.startsWith("#")) {
+    return line.replace(/URI="([^"]+)"/g, (match, reference: string) => {
+      const resolved = absolute(reference, base);
+      return resolved ? `URI="${proxyPath(resolved)}"` : match;
+    });
+  }
+
+  const resolved = absolute(trimmed, base);
+  return resolved ? proxyPath(resolved) : line;
+}
+
 /**
  * Every URL a manifest points at has to come back through this origin. The
  * hosts behind these streams answer a plain GET but send no
@@ -22,23 +43,33 @@ function absolute(reference: string, base: string) {
  * optimisation here, it is the only way the bytes reach the player.
  */
 function rewrite(body: string, base: string) {
-  return body
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
+  const lines = body.split("\n");
+  const first = lines.findIndex((line) => line.startsWith("#EXTINF"));
+  const live = !lines.some((line) => line.startsWith("#EXT-X-ENDLIST"));
+  if (first < 0 || !live) {
+    return lines.map((line) => rewriteLine(line, base)).join("\n");
+  }
 
-      if (trimmed.startsWith("#")) {
-        return line.replace(/URI="([^"]+)"/g, (match, reference: string) => {
-          const resolved = absolute(reference, base);
-          return resolved ? `URI="${proxyPath(resolved)}"` : match;
-        });
-      }
+  const blocks: string[][] = [];
+  let pending: string[] = [];
+  for (const line of lines.slice(first)) {
+    pending.push(line);
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      blocks.push(pending);
+      pending = [];
+    }
+  }
 
-      const resolved = absolute(trimmed, base);
-      return resolved ? proxyPath(resolved) : line;
-    })
-    .join("\n");
+  const kept = blocks.slice(-liveWindow);
+  const dropped = blocks.length - kept.length;
+  const header = lines.slice(0, first).map((line) =>
+    line.startsWith("#EXT-X-MEDIA-SEQUENCE")
+      ? `#EXT-X-MEDIA-SEQUENCE:${Number.parseInt(line.split(":")[1] ?? "0", 10) + dropped}`
+      : rewriteLine(line, base),
+  );
+
+  return [...header, ...kept.flat().map((line) => rewriteLine(line, base))].join("\n");
 }
 
 export async function GET(request: Request, context: { params: Promise<{ token: string }> }) {
