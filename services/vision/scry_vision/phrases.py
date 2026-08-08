@@ -15,10 +15,12 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+import wave
 from dataclasses import dataclass
 from functools import lru_cache
 
 from .claims import Claim, Reading
+from .evidence import bundle, digest
 
 # Whisper works on 16k mono, and pulling anything larger is wasted bandwidth.
 SAMPLE_RATE = 16_000
@@ -92,6 +94,20 @@ def pull_audio(url: str, seconds: float) -> str | None:
     return handle.name if result.returncode == 0 else None
 
 
+def captured(path: str) -> float:
+    """Seconds of audio actually written.
+
+    ffmpeg exits cleanly on a stream that cut out early, so returncode says
+    nothing about how much of the window was heard. A phrase counted over
+    fifteen seconds of a five minute window is not the same claim.
+    """
+    try:
+        with wave.open(path) as track:
+            return track.getnframes() / float(track.getframerate() or SAMPLE_RATE)
+    except (OSError, wave.Error):
+        return 0.0
+
+
 class Phrases:
     kind = "phrase"
 
@@ -143,8 +159,11 @@ class Phrases:
                 else:
                     index += 1
 
+        heard = captured(audio)
         return Reading(
             count=len(said),
             samples=said,
-            detail={"words": words, "model": ear.version},
+            uptime=round(min(1.0, heard / seconds), 4) if seconds > 0 else 0.0,
+            evidence_root=bundle(said)[0] if said else digest(f"{url}|silence".encode()),
+            detail={"words": words, "model": ear.version, "heardSeconds": round(heard, 2)},
         )

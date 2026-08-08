@@ -14,10 +14,14 @@ type Engine struct {
 	pool *pgxpool.Pool
 	tick time.Duration
 	log  *slog.Logger
+	// Streams already reported as unschedulable. The sweep runs every second
+	// and an unusable claim does not fix itself, so without this the reason
+	// scrolls past once a second and buries everything else in the log.
+	warned map[string]bool
 }
 
 func New(pool *pgxpool.Pool, log *slog.Logger) *Engine {
-	return &Engine{pool: pool, tick: time.Second, log: log}
+	return &Engine{pool: pool, tick: time.Second, log: log, warned: map[string]bool{}}
 }
 
 func (e *Engine) Run(ctx context.Context) {

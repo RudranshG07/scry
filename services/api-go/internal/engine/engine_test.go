@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
 func ptr(v int64) *int64 { return &v }
@@ -185,5 +188,47 @@ func TestVerdictToleratesTheOccasionalBadWindow(t *testing.T) {
 	got, _, _ := verdict(ws)
 	if got != "Qualified" {
 		t.Errorf("got %s; 3 of 4 windows agreed, which is above the bar", got)
+	}
+}
+
+func TestObservableRequiresTheLineTheCounterNeeds(t *testing.T) {
+	line := []any{[]any{0.05, 0.42}, []any{0.95, 0.42}}
+
+	cases := []struct {
+		name  string
+		claim domain.Claim
+		want  bool
+	}{
+		{"crossings with a drawn line", domain.Claim{Kind: "crossings", Target: "person",
+			Options: map[string]any{"line": line}}, true},
+		// This is the shape every scheduled market had, and why none of them
+		// could ever be counted.
+		{"crossings with no options at all", domain.Claim{Kind: "crossings", Target: "anything"}, false},
+		{"crossings with half a line", domain.Claim{Kind: "crossings", Target: "anything",
+			Options: map[string]any{"line": []any{[]any{0.1, 0.5}}}}, false},
+		{"a phrase to listen for", domain.Claim{Kind: "phrase", Target: "hello guys"}, true},
+		{"a phrase with nothing to match", domain.Claim{Kind: "phrase"}, false},
+		{"a kind no observer registers", domain.Claim{Kind: "smell", Target: "petrichor"}, false},
+	}
+
+	for _, c := range cases {
+		if got := observable(c.claim); got != c.want {
+			t.Errorf("%s: observable = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestQuestionMatchesWhatIsBeingCounted(t *testing.T) {
+	spoken := questionFor(domain.Claim{Kind: "phrase", Target: "hello guys"}, 12, "events")
+	if !strings.Contains(spoken, "hello guys") || !strings.Contains(spoken, "said") {
+		t.Errorf("a phrase market should ask about the phrase, got %q", spoken)
+	}
+	if strings.Contains(spoken, "count line") {
+		t.Errorf("a phrase market has no count line to cross, got %q", spoken)
+	}
+
+	crossed := questionFor(domain.Claim{Kind: "crossings", Target: "anything"}, 180, "vehicles")
+	if !strings.Contains(crossed, "180 vehicles cross the count line") {
+		t.Errorf("unexpected crossings question %q", crossed)
 	}
 }

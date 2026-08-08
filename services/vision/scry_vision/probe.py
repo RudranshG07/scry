@@ -12,24 +12,56 @@ import json
 import subprocess
 import sys
 import threading
+import urllib.parse
 import urllib.request
 
 MIN_REALTIME_FACTOR = 3.0
 MIN_FPS = 10.0
 
 
-def resolve(source: str) -> str | None:
-    """Watch page to playlist url. Signed and expiring, so resolved at use."""
-    if source.startswith("http") and ".m3u8" in source:
-        return source
+def _ytdlp(args: list[str]) -> str | None:
     try:
-        out = subprocess.run(
-            ["yt-dlp", "--no-update", "-g", "-f", "best[height<=720]", source],
-            capture_output=True, text=True, timeout=90)
+        out = subprocess.run(["yt-dlp", "--no-update", *args],
+                             capture_output=True, text=True, timeout=90)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    url = out.stdout.strip().splitlines()
-    return url[0] if url else None
+    return out.stdout if out.returncode == 0 else None
+
+
+def resolve(source: str) -> str | None:
+    """Watch page to playlist url. Signed and expiring, so resolved at use.
+
+    The variant manifest is asked for by name rather than taking whatever `-g`
+    ranks best. On some streams that is a progressive mp4, and everything
+    downstream reads the result as a playlist: one camera was suspended for
+    "URL can't contain control characters" because its mp4 header was being
+    parsed as a list of segments.
+    """
+    if source.startswith("http") and ".m3u8" in source:
+        return source
+
+    probed = _ytdlp(["-J", "--no-warnings", "--no-playlist", source])
+    if probed:
+        try:
+            payload = json.loads(probed)
+            master = payload.get("manifest_url") or next(
+                (f["manifest_url"] for f in payload.get("formats") or [] if f.get("manifest_url")),
+                None)
+            if master:
+                return master
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    direct = _ytdlp(["-g", "-f", "best[protocol^=m3u8][height<=720]/best[protocol^=m3u8]", source])
+    for line in (direct or "").splitlines():
+        if line.startswith("http"):
+            return line
+    return None
+
+
+def _fetch(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=20) as response:
+        return response.read().decode("utf-8", "replace")
 
 
 def throughput(playlist: str) -> dict:
@@ -37,12 +69,25 @@ def throughput(playlist: str) -> dict:
     import time
 
     try:
-        with urllib.request.urlopen(playlist, timeout=20) as response:
-            body = response.read().decode("utf-8", "replace")
+        body = _fetch(playlist)
     except Exception as error:
         return {"ok": False, "reason": f"playlist unreachable: {error}"}
 
     lines = [line.strip() for line in body.splitlines()]
+    entries = [line for line in lines if line and not line.startswith("#")]
+
+    # A master playlist lists renditions, not segments, so it carries no EXTINF
+    # and measuring it directly reports zero seconds of video and suspends a
+    # perfectly good camera. Descend to the lowest rendition, which is the one a
+    # thin connection would end up on anyway.
+    if entries and ".m3u8" in entries[-1]:
+        playlist = urllib.parse.urljoin(playlist, entries[-1])
+        try:
+            body = _fetch(playlist)
+        except Exception as error:
+            return {"ok": False, "reason": f"variant unreachable: {error}"}
+        lines = [line.strip() for line in body.splitlines()]
+
     seconds = sum(float(line.split(":", 1)[1].rstrip(",")) for line in lines
                   if line.startswith("#EXTINF:"))
     segments = [line for line in lines if line and not line.startswith("#")]
@@ -118,7 +163,6 @@ def busiest_band(playlist: str, scene, seconds: float = 60, bands: int = 12) -> 
 
     yolo = _load(MODELS["primary_vision"].weights)
     classes = list(PEOPLE if scene.unit == "people" else VEHICLES)
-    width, height = 640, 360
 
     capture = cv2.VideoCapture(playlist)
     if not capture.isOpened():
@@ -132,10 +176,13 @@ def busiest_band(playlist: str, scene, seconds: float = 60, bands: int = 12) -> 
         ok, frame = capture.read()
         if not ok:
             continue
-        result = yolo.predict(cv2.resize(frame, (width, height)), classes=classes,
-                              conf=0.25, verbose=False)[0]
+        # Native frame, letterboxed by the model. Resizing first is what this
+        # band measurement exists to correct for, and doing it here cost seven
+        # eighths of the detections when the counter did the same thing.
+        result = yolo.predict(frame, imgsz=640, classes=classes, conf=0.25, verbose=False)[0]
         if result.boxes is None:
             continue
+        height = frame.shape[0]
         for _, y, _, _ in result.boxes.xywh.tolist():
             index = min(bands - 1, max(0, int(y / height * bands)))
             tally[index] += 1

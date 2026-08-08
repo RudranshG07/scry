@@ -44,7 +44,11 @@ def _average(samples: list[int]) -> float:
     return statistics.fmean(samples) if samples else 0.0
 
 
-def inspect(url: str, seconds: float = 45) -> Verdict:
+OBSERVATION_WINDOW = 15 * 60
+
+
+def inspect(url: str, seconds: float = 45, claim: dict | None = None,
+            window: float = OBSERVATION_WINDOW) -> Verdict:
     """Watch a stream briefly and decide what, if anything, it can count."""
     from .occupancy import Occupancy
     from .probe import resolve, throughput
@@ -108,16 +112,45 @@ def inspect(url: str, seconds: float = 45) -> Verdict:
                        counts=unit, subjects=round(primary_avg, 1), peak=peak,
                        disagreement=round(disagreement, 3), realtime=net["realtime_factor"])
 
-    # Below this the count is real but a single subject moves it by more than
-    # the settlement bar, so results turn on rounding rather than observation.
-    provisional = primary_avg < MIN_FOR_PERCENT
+    provisional, note = _too_quiet(playlist, claim, primary_avg, seconds, window)
     return Verdict(
-        url, True,
-        "quiet enough that one subject moves the result" if provisional else "usable",
+        url, True, note,
         counts=unit, subjects=round(primary_avg, 1), peak=peak,
         disagreement=round(disagreement, 3), realtime=net["realtime_factor"],
         provisional=provisional,
     )
+
+
+def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
+               seconds: float, window: float) -> tuple[bool, str]:
+    """Whether one subject either way would swing the settled value.
+
+    Measured against whatever the market actually settles on. For a level claim
+    that is the number in view, so occupancy is the right yardstick. For a line
+    claim it is the total that crossed over the whole window, which is a far
+    larger number: Abbey Road holds nine people at a glance and still passes a
+    couple of hundred over fifteen minutes. Judging crossings by occupancy
+    benched the busiest camera we had.
+    """
+    line = ((claim or {}).get("options") or {}).get("line")
+    if (claim or {}).get("kind") != "crossings" or not line:
+        quiet = occupancy < MIN_FOR_PERCENT
+        return quiet, "quiet enough that one subject moves the result" if quiet else "usable"
+
+    from .claims import Claim
+    from .crossings import Crossings
+
+    sample = Crossings().observe(
+        playlist,
+        Claim(stream_id="inspection", kind="crossings",
+              target=(claim.get("target") or "anything"), options=claim["options"]),
+        seconds, "primary_vision")
+
+    expected = sample.count * (window / seconds) if seconds > 0 else 0.0
+    quiet = expected < MIN_FOR_PERCENT
+    return quiet, (
+        f"about {expected:.0f} crossings a window is too few to settle on"
+        if quiet else f"about {expected:.0f} crossings a window")
 
 
 def main() -> int:

@@ -56,7 +56,7 @@ def sweep(api: str, seconds: float) -> int:
         return 0
 
     for stream in due:
-        verdict = inspect(stream["sourceUrl"], seconds=seconds)
+        verdict = inspect(stream["sourceUrl"], seconds=seconds, claim=stream.get("claim"))
         status = report(api, stream["id"], verdict)
         mark = "keeps" if verdict.usable else "loses"
         print(f"  {stream['id']}: {mark} its place — {verdict.reason} "

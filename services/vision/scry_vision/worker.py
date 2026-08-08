@@ -63,17 +63,23 @@ def claim_of(market: dict, stream: str):
 
 
 def as_report(reading, seconds: float) -> dict:
-    """Shape a reading the way the API expects a report."""
+    """Shape a reading the way the API expects a report.
+
+    uptime and evidenceRoot come from the reading. Reporting a flat 1.0 told the
+    resolver every window was fully observed, which is exactly the check that
+    stops a count taken over half a window from settling a market, and an empty
+    root left nothing for anyone to verify the result against afterwards.
+    """
     return {
         "ok": True,
         "count": reading.count,
-        "uptime": 1.0,
-        "visibility": 1.0,
+        "uptime": reading.uptime,
+        "visibility": reading.samples[-1]["streamQuality"] if reading.samples else 1.0,
         "frozenSeconds": 0.0,
         "frames": reading.detail.get("frames", 0),
         "elapsed": seconds,
         "modelVersion": reading.detail.get("model", "unknown"),
-        "evidenceRoot": "",
+        "evidenceRoot": reading.evidence_root,
         "counts": reading.samples,
     }
 

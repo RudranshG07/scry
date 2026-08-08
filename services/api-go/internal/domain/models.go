@@ -56,6 +56,10 @@ type StreamSource struct {
 	ID        string `json:"id"`
 	SourceURL string `json:"sourceUrl"`
 	Status    string `json:"status"`
+	// What this stream is set up to count. An inspection has to measure the
+	// same thing the market settles on, and for a line claim that is crossings
+	// over the window rather than how many subjects stand in frame.
+	Claim Claim `json:"claim"`
 }
 
 // Qualification is what watching a stream established about it.

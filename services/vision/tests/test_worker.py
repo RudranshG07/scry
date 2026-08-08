@@ -5,7 +5,8 @@ from datetime import UTC, datetime, timedelta
 from scry_vision.probe import verdict
 from scry_vision.scenes import scene_for
 from scry_vision.calibrate import TOLERANCE_FLOOR, TOLERANCE_PERCENT, agrees, allowed_spread, spread, summarise
-from scry_vision.worker import JOIN_GRACE, StreamMismatch, at, guard, pick, slot
+from scry_vision.claims import Reading
+from scry_vision.worker import JOIN_GRACE, StreamMismatch, as_report, at, guard, pick, slot
 
 
 def market(id_, stream, status="Observing"):
@@ -429,3 +430,26 @@ class ClaimRoutingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReportTest(unittest.TestCase):
+    """A report carries what the reading measured, not a hopeful constant.
+
+    Reporting uptime 1.0 regardless told the resolver every window was fully
+    observed, disabling the one check that keeps a count taken over a fraction
+    of a window from settling a market.
+    """
+
+    def test_uptime_and_evidence_come_from_the_reading(self):
+        reading = Reading(count=42, samples=[{"streamQuality": 0.8}],
+                          uptime=0.61, evidence_root="0xabc",
+                          detail={"frames": 900, "model": "yolov8s/1.0"})
+        report = as_report(reading, 300)
+        self.assertEqual(report["uptime"], 0.61)
+        self.assertEqual(report["evidenceRoot"], "0xabc")
+        self.assertEqual(report["count"], 42)
+
+    def test_a_window_that_saw_nothing_does_not_claim_full_uptime(self):
+        report = as_report(Reading(0, [], detail={"reason": "stream unreachable"}), 300)
+        self.assertEqual(report["uptime"], 0.0)
+        self.assertEqual(report["evidenceRoot"], "")

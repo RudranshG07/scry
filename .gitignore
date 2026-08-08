@@ -57,3 +57,6 @@ CLAUDE.md
 # python environments
 .venv/
 **/.venv/
+
+# Model weights are downloaded on demand, not carried in the repo.
+*.pt

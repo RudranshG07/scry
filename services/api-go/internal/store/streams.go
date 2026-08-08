@@ -14,7 +14,7 @@ import (
 // can only ever void.
 func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration) ([]domain.StreamSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, coalesce(source_url, ''), status
+		SELECT id, coalesce(source_url, ''), status, coalesce(default_claim, '{}'::jsonb)
 		FROM streams
 		WHERE coalesce(btrim(source_url), '') <> ''
 		  AND (qualification->>'inspectedAt' IS NULL
@@ -28,7 +28,7 @@ func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration
 	var out []domain.StreamSource
 	for rows.Next() {
 		var s domain.StreamSource
-		if err := rows.Scan(&s.ID, &s.SourceURL, &s.Status); err != nil {
+		if err := rows.Scan(&s.ID, &s.SourceURL, &s.Status, &s.Claim); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
