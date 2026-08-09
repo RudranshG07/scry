@@ -49,6 +49,18 @@ def at(market: dict, field: str) -> datetime:
     return datetime.fromisoformat(market[field].replace("Z", "+00:00"))
 
 
+def serving(playlist: str, timeout: float = 4.0) -> bool:
+    """Whether the relay actually has this path, rather than merely being named."""
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(playlist, timeout=timeout) as response:
+            return response.status == 200 and b"#EXTM3U" in response.read(64)
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
 def claim_of(market: dict, stream: str):
     """What this market counts, defaulting to whatever crosses the line."""
     from .claims import Claim
@@ -187,10 +199,24 @@ def main() -> int:
         camera = resolve(args.youtube)
         if not camera:
             parser.error(f"could not resolve a live playlist from {args.youtube}")
+
+    # The relay is preferred, not imposed. Two observers reading it get identical
+    # frames, which keeps any disagreement in the detector rather than in which
+    # traffic each one happened to see. But it used to overwrite a camera that
+    # had already been resolved, so with the relay down the observers spent ten
+    # days watching a url that served nothing, reporting zero counts and zero
+    # uptime, and every market they touched invalidated.
     if args.relay:
-        camera = f"{args.relay.rstrip('/')}/{args.stream}/index.m3u8"
+        relayed = f"{args.relay.rstrip('/')}/{args.stream}/index.m3u8"
+        if serving(relayed):
+            camera = relayed
+        elif camera:
+            print(f"relay not serving {args.stream}, watching the source directly", flush=True)
+        else:
+            parser.error(f"the relay is not serving {args.stream} and no source was given")
+
     if not camera:
-        parser.error("give either --camera or --relay")
+        parser.error("give either --camera, --youtube or a relay that is serving")
 
     try:
         return run(args.api, args.stream, camera, args.market, args.observer,
