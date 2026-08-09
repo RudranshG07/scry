@@ -62,6 +62,18 @@ type StreamSource struct {
 	Claim Claim `json:"claim"`
 }
 
+// StreamSubmission is a link somebody wants markets run on, before anything has
+// watched it. Nothing here is trusted: the inspector decides whether it can be
+// counted, and until it does the stream opens no markets.
+type StreamSubmission struct {
+	SourceURL string `json:"sourceUrl"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	Timezone  string `json:"timezone"`
+	Category  string `json:"category"`
+	Claim     Claim  `json:"claim"`
+}
+
 // Qualification is what watching a stream established about it.
 type Qualification struct {
 	Usable       bool    `json:"usable"`

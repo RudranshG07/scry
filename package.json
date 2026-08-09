@@ -21,7 +21,8 @@
     "verify:ui": "./scripts/verify-ui.sh",
     "qualify": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.qualify",
     "inspect": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.inspector",
-    "verify:playback": "bash scripts/verify-playback.sh"
+    "verify:playback": "bash scripts/verify-playback.sh",
+    "discover": "env PYTHONPATH=services/vision services/vision/.venv/bin/python -m scry_vision.discover"
   },
   "dependencies": {
     "hls.js": "1.6.16",

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -30,7 +31,11 @@ type Server struct {
 	allowedOrigins []string
 	domain         string
 	secureCookies  bool
-	log            *slog.Logger
+	// Lets Scry post its own streams without a wallet. Unset means only signed-in
+	// people can submit, which is the right default: an empty token must never
+	// authenticate an empty header.
+	operatorToken string
+	log           *slog.Logger
 }
 
 func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Server {
@@ -46,6 +51,7 @@ func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Se
 		// A session cookie sent in the clear is a session anyone on the path can
 		// take, but localhost has no certificate to offer.
 		secureCookies: strings.HasPrefix(origins[0], "https://"),
+		operatorToken: strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
 		log:           slog.Default(),
 	}
 	server.routes()
@@ -64,6 +70,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /v1/markets/{id}/messages", server.postMessage)
 	server.mux.HandleFunc("GET /v1/notifications", server.getNotifications)
 	server.mux.HandleFunc("GET /v1/streams/{id}/playback-token", server.getPlaybackToken)
+	server.mux.HandleFunc("POST /v1/streams", server.postStream)
 	server.mux.HandleFunc("GET /v1/streams/pending", server.getPendingStreams)
 	server.mux.HandleFunc("POST /v1/streams/{id}/qualification", server.postQualification)
 	server.mux.HandleFunc("GET /v1/markets/{id}/stream", server.marketStream)

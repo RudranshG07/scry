@@ -69,10 +69,15 @@ func (e *Engine) schedule(ctx context.Context) error {
 		       COALESCE(s.default_claim, '{}'::jsonb)
 		FROM streams s
 		WHERE s.status = 'Qualified'
-		  -- A stream with no playback source cannot be observed, so a market on
-		  -- it could only ever invalidate. Do not open one. An unset source
-		  -- reaches us as both NULL and empty text, and empty passes IS NOT NULL.
-		  AND coalesce(btrim(s.public_playback_id), '') <> ''
+		  -- A stream with no source cannot be observed, so a market on it could
+		  -- only ever invalidate. Do not open one. An unset source reaches us as
+		  -- both NULL and empty text, and empty passes IS NOT NULL.
+		  --
+		  -- This asks for source_url rather than the relay's playback id, which
+		  -- a submitted link never has: observers and the player both resolve
+		  -- source_url now, so a stream with one is watchable whether or not the
+		  -- relay ever republishes it.
+		  AND coalesce(btrim(s.source_url), '') <> ''
 		  -- On a quiet camera a single subject moves the count by more than the
 		  -- agreement bar, so a result there turns on rounding rather than on
 		  -- what anyone observed. The stream stays watchable; it just does not

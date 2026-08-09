@@ -98,11 +98,15 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
     }
     unit, (primary_avg, verify_avg, peak) = max(scored.items(), key=lambda kv: kv[1][0])
 
+    # Empty is not broken. Abbey Road at half past midnight shows nobody and at
+    # noon shows a crossing every few seconds, so a single look during quiet
+    # hours must not throw the camera out — it comes back provisional, keeps its
+    # place, opens no markets, and is looked at again on the next sweep.
     if primary_avg < MIN_SUBJECTS:
-        return Verdict(url, False,
-                       "too little happens in view to count; subjects may be too small or too few",
+        return Verdict(url, True,
+                       "nothing much in view right now; subjects may also be too small to read",
                        counts=unit, subjects=round(primary_avg, 1), peak=peak,
-                       realtime=net["realtime_factor"])
+                       realtime=net["realtime_factor"], provisional=True)
 
     lo, hi = sorted((primary_avg, verify_avg))
     disagreement = (hi - lo) / lo if lo else 1.0

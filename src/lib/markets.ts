@@ -352,22 +352,19 @@ export function marketClip(id: string) {
 // a 2.1 Mbit/s stream — the player buffered forever and showed nothing. These
 // are CDN-backed and carry six bitrates, so a thin connection drops to 144p
 // instead of stalling.
+//
+// Video ids listed here rot: of four cameras qualified in one sitting, one had
+// ended and one had vanished within hours, and channels that restart a stream
+// daily mint a new id every morning. This map is a floor for streams the backend
+// has no source for, not the source of truth — that is streams.source_url, which
+// the inspector suspends and re-qualifies on its own.
 const YOUTUBE = "https://www.youtube.com/watch?v=";
 
 export const streamSourcePool: Record<string, Array<{ url: string; name: string; timeZone: string }>> = {
   "stream-london-abbey": [
     { url: `${YOUTUBE}M3EYAY2MftI`, name: "Abbey Road Crossing, London", timeZone: "Europe/London" },
   ],
-  "stream-sd-5-28th": [
-    { url: `${YOUTUBE}9KinvEHYcZc`, name: "Calea Victoriei, Bucharest", timeZone: "Europe/Bucharest" },
-    { url: `${YOUTUBE}M3EYAY2MftI`, name: "Abbey Road Crossing, London", timeZone: "Europe/London" },
-  ],
   "stream-sd-8-taylor": [
-    { url: `${YOUTUBE}2juLrCH5w9U`, name: "Ohio 741 at 73", timeZone: "America/New_York" },
-    { url: `${YOUTUBE}9KinvEHYcZc`, name: "Calea Victoriei, Bucharest", timeZone: "Europe/Bucharest" },
-  ],
-  "stream-sd-8-15": [
-    { url: `${YOUTUBE}Evt_Jy3vh9I`, name: "Cedar Corner Roundabout", timeZone: "America/New_York" },
     { url: `${YOUTUBE}2juLrCH5w9U`, name: "Ohio 741 at 73", timeZone: "America/New_York" },
   ],
 };
