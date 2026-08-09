@@ -5,7 +5,6 @@ import {
   formatCompactUsd,
   formatCount,
   formatHash,
-  formatLatency,
   formatMultiplier,
   formatPercent,
   formatSignedPercent,
@@ -43,13 +42,6 @@ test("multipliers and identifiers truncate predictably", () => {
   assert.equal(formatAddress("0x1234567890abcdef1234567890abcdef12345678"), "0x1234…5678");
   assert.equal(formatAddress("0x1234"), "0x1234");
   assert.equal(formatHash(`0x${"a".repeat(64)}`), "0xaaaaaa…aaaa");
-});
-
-test("latency crosses over to seconds past one thousand milliseconds", () => {
-  assert.equal(formatLatency(820), "820ms");
-  assert.equal(formatLatency(999), "999ms");
-  assert.equal(formatLatency(1500), "1.5s");
-  assert.equal(formatLatency(2400), "2.4s");
 });
 
 test("non-finite values render an em dash rather than NaN", () => {

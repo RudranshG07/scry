@@ -1,4 +1,4 @@
-import { clipFor, sourcesFor, streamKeyFor } from "@/lib/markets";
+import { sourcesFor, streamKeyFor } from "@/lib/markets";
 import { proxyPath } from "@/lib/streams/signing";
 import { resolveUpstream } from "@/lib/streams/upstream";
 
@@ -156,10 +156,9 @@ export async function GET(_request: Request, context: { params: Promise<{ market
     });
   }
 
-  const clip = clipFor(marketId);
-  if (clip) {
-    return finish({ url: clip.url, poster: clip.poster, name: clip.name, kind: "video", live: false });
-  }
-
-  return finish({ url: "/landing/hero.mp4", name: "Reference footage", kind: "video", live: false });
+  // No stand-in footage. A market whose camera cannot be reached used to fall
+  // back to a recorded clip labelled "Reference footage", which plays exactly
+  // like the live feed and sits under a count the clip has nothing to do with.
+  // The player has an honest empty state; this is what it is for.
+  return finish({ url: "", name: "", kind: "hls", live: false });
 }

@@ -64,8 +64,3 @@ export function formatHash(hash: string) {
   return `${hash.slice(0, 8)}…${hash.slice(-4)}`;
 }
 
-export function formatLatency(milliseconds: number) {
-  if (!Number.isFinite(milliseconds)) return "—";
-  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
-  return `${(milliseconds / 1000).toFixed(1)}s`;
-}

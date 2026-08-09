@@ -6,7 +6,8 @@ import { FormEvent, useMemo, useRef, useState } from "react";
 import { useExperience } from "@/components/experience-provider";
 import { SiteHeader } from "@/components/site-header";
 import type { Category } from "@/lib/domain";
-import { categories, marketCategory, marketDirectory, outcomeLabel } from "@/lib/markets";
+import { useMarkets } from "@/hooks/use-scry";
+import { categories } from "@/lib/markets";
 
 export function ProfileView() {
   const { settings, updateSettings } = useExperience();
@@ -15,20 +16,25 @@ export function ProfileView() {
   const [state, setState] = useState<"idle" | "success" | "error">("idle");
   const nameRef = useRef<HTMLInputElement>(null);
   const forecasts = settings.forecasts;
+  // Saved forecasts carry a market id and nothing else, so the markets they
+  // point at come from the API rather than a list compiled at build time.
+  const { data: markets } = useMarkets();
 
   const stats = useMemo(() => {
     const averageConfidence = forecasts.length
       ? forecasts.reduce((total, forecast) => total + forecast.confidence, 0) / forecasts.length
       : 0;
     const coveredCategories = new Set(
-      forecasts.map((forecast) => marketCategory(forecast.marketId)).filter(Boolean),
+      forecasts
+        .map((forecast) => markets?.find((item) => item.id === forecast.marketId)?.category)
+        .filter(Boolean),
     ).size;
     return {
       averageConfidence,
       coveredCategories,
       streak: Math.min(forecasts.length, 7),
     };
-  }, [forecasts]);
+  }, [forecasts, markets]);
 
   function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,9 +112,10 @@ export function ProfileView() {
             ) : (
               <div className="mt-4 grid gap-3">
                 {[...forecasts].reverse().map((forecast) => {
-                  const market = marketDirectory.get(forecast.marketId);
+                  const market = markets?.find((item) => item.id === forecast.marketId);
                   if (!market) return null;
-                  return <article className="grid gap-3 rounded-control bg-surface-raised p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={forecast.marketId}><div><p className="text-xs font-semibold text-ring">{forecast.confidence}% · {outcomeLabel(market.id, forecast.outcomeId)}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-1 text-xs text-muted-foreground">{market.city} · {market.category}</p></div><Link className="button-secondary" href={`/markets/${market.id}`}>Open market</Link></article>;
+                  const outcome = market.outcomes.find((item) => item.id === forecast.outcomeId);
+                  return <article className="grid gap-3 rounded-control bg-surface-raised p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={forecast.marketId}><div><p className="text-xs font-semibold text-ring">{forecast.confidence}% · {outcome?.label ?? forecast.outcomeId}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-1 text-xs text-muted-foreground">{market.city} · {market.category}</p></div><Link className="button-secondary" href={`/markets/${market.id}`}>Open market</Link></article>;
                 })}
               </div>
             )}

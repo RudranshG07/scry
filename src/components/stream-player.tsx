@@ -42,6 +42,13 @@ export function StreamPlayer({
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("resolve failed"))))
       .then((resolved: ResolvedStream) => {
         if (!active) return;
+        // An empty url means no camera behind this market is reachable. There is
+        // no recorded stand-in to show, so say so rather than play something
+        // that was never observed.
+        if (!resolved.url) {
+          setState("error");
+          return;
+        }
         setStream(resolved);
         setState("loading");
       })

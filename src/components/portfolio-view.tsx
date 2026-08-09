@@ -5,9 +5,8 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { useWallet } from "@/components/wallet-provider";
 import { useExperience } from "@/components/experience-provider";
-import { usePortfolio } from "@/hooks/use-scry";
+import { useMarkets, usePortfolio } from "@/hooks/use-scry";
 import { formatUsdc } from "@/lib/format";
-import { marketDirectory, outcomeLabel } from "@/lib/markets";
 
 const positionTone: Record<string, string> = {
   Claimable: "bg-accent/12 text-accent",
@@ -21,6 +20,10 @@ export function PortfolioView() {
   const wallet = useWallet();
   const { settings } = useExperience();
   const { data: portfolio, status, error, retry } = usePortfolio(wallet.isConnected ? wallet.address : null);
+  // Forecasts are stored on this device by market id, so the market itself has
+  // to come back from the API. Looking them up in a static list meant a forecast
+  // on any real market resolved to nothing and rendered as a blank row.
+  const { data: markets } = useMarkets();
   const state = !wallet.isConnected ? "idle" : status;
 
   return (
@@ -39,11 +42,12 @@ export function PortfolioView() {
           ) : (
             <div className="mt-4 grid gap-3">
               {settings.forecasts.map((forecast) => {
-                const market = marketDirectory.get(forecast.marketId);
+                const market = markets?.find((item) => item.id === forecast.marketId);
                 if (!market) return null;
+                const outcome = market.outcomes.find((item) => item.id === forecast.outcomeId);
                 return (
                   <article className="grid gap-4 rounded-card bg-surface-raised p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={forecast.marketId}>
-                    <div><p className="text-xs font-semibold text-ring">{forecast.confidence}% confidence · {outcomeLabel(market.id, forecast.outcomeId)}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-2 text-xs text-muted-foreground">{market.city} · Stored locally</p></div>
+                    <div><p className="text-xs font-semibold text-ring">{forecast.confidence}% confidence · {outcome?.label ?? forecast.outcomeId}</p><h3 className="mt-2 text-sm font-semibold">{market.question}</h3><p className="mt-2 text-xs text-muted-foreground">{market.city} · Stored locally</p></div>
                     <Link className="button-secondary" href={`/markets/${market.id}`}>View market<ArrowRight className="size-4" aria-hidden="true" /></Link>
                   </article>
                 );

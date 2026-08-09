@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useProof } from "@/hooks/use-scry";
 import { formatCount, formatPercent } from "@/lib/format";
-import { marketUnit } from "@/lib/markets";
 import { formatWindow } from "@/lib/time";
 
 function Row({ label, value, tone = "" }: { label: string; value: string; tone?: string }) {
@@ -15,7 +14,7 @@ function Row({ label, value, tone = "" }: { label: string; value: string; tone?:
   );
 }
 
-export function ProofSheet({ marketId }: { marketId: string }) {
+export function ProofSheet({ marketId, unit }: { marketId: string; unit: string }) {
   const { data: proof, status, retry } = useProof(marketId);
 
   return (
@@ -55,7 +54,7 @@ export function ProofSheet({ marketId }: { marketId: string }) {
             <Row label="Window" value={formatWindow(proof.observationWindow.opensAt, proof.observationWindow.closesAt)} />
             <Row
               label="Observed"
-              value={proof.observedValue === null ? "collecting" : `${formatCount(proof.observedValue)} ${marketUnit(marketId)}`}
+              value={proof.observedValue === null ? "collecting" : `${formatCount(proof.observedValue)} ${unit}`}
               tone={proof.observedValue === null ? "text-muted-foreground" : ""}
             />
             <Row

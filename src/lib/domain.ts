@@ -30,7 +30,6 @@ export type Market = {
   status: MarketStatus;
   countdown: string;
   pool: number;
-  forecast: number;
   currentRate: number;
   baseline: number;
   observers: number;

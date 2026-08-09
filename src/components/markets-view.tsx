@@ -9,7 +9,7 @@ import { SiteHeader } from "@/components/site-header";
 import { useMarkets } from "@/hooks/use-scry";
 import { isTerminalMarket, type Category, type Market } from "@/lib/domain";
 import { formatCompactUsd, formatCount } from "@/lib/format";
-import { categories, marketUnit } from "@/lib/markets";
+import { categories } from "@/lib/markets";
 import { StatusPill } from "@/components/ui/status-pill";
 import { useNow } from "@/lib/clock";
 import { countdownFor, formatSchedule, marketPhase } from "@/lib/time";
@@ -67,7 +67,7 @@ function MarketCard({ market, now }: { market: Market; now: number }) {
         <div className={`mt-4 rounded-control p-3 text-sm ${phase.status === "Invalid" ? "bg-danger/8 text-danger" : "bg-accent/8 text-accent"}`}>
           {phase.status === "Invalid"
             ? "Observation was invalidated. Principal is refundable."
-            : `Final observation: ${market.observedValue === undefined ? "—" : `${formatCount(market.observedValue)} ${marketUnit(market.id)}`}${winningOutcome ? ` · ${winningOutcome.label} won` : ""}`}
+            : `Final observation: ${market.observedValue === undefined ? "—" : `${formatCount(market.observedValue)} ${market.unit ?? "events"}`}${winningOutcome ? ` · ${winningOutcome.label} won` : ""}`}
         </div>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">

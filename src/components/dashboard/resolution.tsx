@@ -1,8 +1,6 @@
 "use client";
 
 import type { Market } from "@/lib/domain";
-import { formatCount } from "@/lib/format";
-import { marketDirectory, marketUnit } from "@/lib/markets";
 import { challengeWindowMs, formatSchedule } from "@/lib/time";
 
 function Criterion({ label, value }: { label: string; value: string }) {
@@ -15,8 +13,11 @@ function Criterion({ label, value }: { label: string; value: string }) {
 }
 
 export function Resolution({ market }: { market: Market }) {
-  const entry = marketDirectory.get(market.id);
-  const unit = marketUnit(market.id);
+  const unit = market.unit ?? "events";
+  // The bar comes from the market's own outcomes, which the engine writes from
+  // the threshold it measured for this camera. A build-time table had one
+  // number for every stream and none at all for markets it did not know about.
+  const bar = market.outcomes[0]?.label;
 
   return (
     <section aria-labelledby="resolution-heading">
@@ -27,15 +28,11 @@ export function Resolution({ market }: { market: Market }) {
       <dl className="mt-2 grid gap-x-10 sm:grid-cols-2">
         <Criterion
           label="Measured"
-          value={
-            entry
-              ? `${unit.charAt(0).toUpperCase()}${unit.slice(1)} crossing the published count line at ${market.location}.`
-              : `${unit} at ${market.location}.`
-          }
+          value={`${unit.charAt(0).toUpperCase()}${unit.slice(1)} crossing the published count line at ${market.location}.`}
         />
         <Criterion
           label="Threshold"
-          value={entry ? `Resolves yes above ${formatCount(entry.threshold)} ${unit}.` : "Published with the market rule."}
+          value={bar ? `Resolves "${bar}" against the observed count.` : "Published with the market rule."}
         />
         <Criterion label="Observation window" value={`${formatSchedule(market.observationStartsAt)} to ${formatSchedule(market.observationEndsAt)}`} />
         <Criterion label="Quorum" value="Two of three independent observers must sign the same value." />

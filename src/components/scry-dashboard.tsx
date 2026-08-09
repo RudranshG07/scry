@@ -16,7 +16,7 @@ import { useMarketFeed, useMarkets } from "@/hooks/use-scry";
 import { useNow } from "@/lib/clock";
 import type { Market } from "@/lib/domain";
 import { formatCount } from "@/lib/format";
-import { marketUnit, type Category } from "@/lib/markets";
+import { type Category } from "@/lib/markets";
 import { marketPhase } from "@/lib/time";
 
 function ResultBanner({ market, now }: { market: Market; now: number }) {
@@ -35,7 +35,7 @@ function ResultBanner({ market, now }: { market: Market; now: number }) {
         <p className={`text-sm ${invalid ? "text-danger" : "text-accent"}`}>
           {invalid
             ? "Observation did not meet the published rule. Every principal is refundable."
-            : `${winner?.label ?? "Winning outcome"} resolved at ${market.observedValue === undefined ? "—" : `${formatCount(market.observedValue)} ${marketUnit(market.id)}`}.`}
+            : `${winner?.label ?? "Winning outcome"} resolved at ${market.observedValue === undefined ? "—" : `${formatCount(market.observedValue)} ${market.unit ?? "events"}`}.`}
         </p>
         <Link className="text-xs underline underline-offset-4 hover:no-underline" href={`/proof/${market.id}`}>
           Inspect the evidence
@@ -151,7 +151,7 @@ export function ScryDashboard({ initialMarketId }: { initialMarketId?: string })
                 />
                 <MarketChart market={market} />
                 <Resolution market={market} />
-                <ProofSheet key={`proof-${market.id}`} marketId={market.id} />
+                <ProofSheet key={`proof-${market.id}`} marketId={market.id} unit={market.unit ?? "events"} />
                 <RoomActivity key={`room-${market.id}`} market={market} />
               </div>
 

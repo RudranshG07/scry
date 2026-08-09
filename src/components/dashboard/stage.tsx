@@ -5,9 +5,8 @@ import { useCallback, useState } from "react";
 import { StreamPlayer } from "@/components/stream-player";
 import type { ResolvedStream } from "@/app/api/streams/[marketId]/route";
 import type { Market } from "@/lib/domain";
-import { formatCount, formatLatency, formatRate } from "@/lib/format";
-import { marketUnit, sourcesFor } from "@/lib/markets";
-import { streamLatencyFor } from "@/lib/simulation";
+import { formatCount, formatRate } from "@/lib/format";
+import { sourcesFor } from "@/lib/markets";
 import { marketPhase } from "@/lib/time";
 
 export type FeedState = "ready" | "loading" | "error";
@@ -54,13 +53,12 @@ export function Stage({
   onRefresh: () => void;
 }) {
   const phase = marketPhase(market, now);
-  const latency = now === 0 ? null : streamLatencyFor(market, now);
   const settled = phase.status === "Resolved" || phase.status === "Invalid";
   const isRealFeed = sourcesFor(market.streamId).length > 0;
   const [activeSource, setActiveSource] = useState<ResolvedStream | null>(null);
   const handleSourceChange = useCallback((source: ResolvedStream | null) => setActiveSource(source), []);
   const isLiveSource = Boolean(activeSource?.live) && phase.isLive && connected;
-  const unit = market.unit ?? marketUnit(market.id);
+  const unit = market.unit ?? "events";
 
   return (
     <div>
@@ -100,9 +98,8 @@ export function Stage({
 
       <div className="absolute bottom-4 right-4 z-10">
         <span className="flex items-center gap-3 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-sm">
-          {latency !== null && connected && (
-            <span className="font-mono text-[11px] tabular-nums text-white/50">{formatLatency(latency)}</span>
-          )}
+          {/* A latency figure used to sit here. It was a function of the market
+              id and a clock, not of the stream, and it moved convincingly. */}
           <span className="text-[11px] text-white/50">{market.observers}/3</span>
           <button
             className="focus-ring -mr-1 grid size-6 place-items-center rounded-full text-white/50 transition-colors hover:text-white"

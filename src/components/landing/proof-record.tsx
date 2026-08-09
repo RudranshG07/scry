@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Market, ProofOfObservation } from "@/lib/domain";
 import { formatCount, formatPercent } from "@/lib/format";
-import { marketUnit } from "@/lib/markets";
 import { formatWindow } from "@/lib/time";
 
 function Row({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
@@ -53,7 +52,7 @@ export function ProofRecord({ market, proof }: { market: Market; proof: ProofOfO
             <Row label="Window" value={formatWindow(proof.observationWindow.opensAt, proof.observationWindow.closesAt)} />
             <Row
               label="Observed"
-              value={proof.observedValue === null ? "collecting" : `${formatCount(proof.observedValue)} ${marketUnit(market.id)}`}
+              value={proof.observedValue === null ? "collecting" : `${formatCount(proof.observedValue)} ${market.unit ?? "events"}`}
             />
             <Row
               label="Uptime"

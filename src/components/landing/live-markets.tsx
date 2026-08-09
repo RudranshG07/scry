@@ -4,7 +4,6 @@ import Link from "next/link";
 import type { Market } from "@/lib/domain";
 import { useNow } from "@/lib/clock";
 import { formatCompactUsd, formatCount } from "@/lib/format";
-import { marketUnit } from "@/lib/markets";
 import { countdownFor, marketPhase } from "@/lib/time";
 
 export function LiveMarkets({ markets }: { markets: Market[] }) {
@@ -60,7 +59,7 @@ export function LiveMarkets({ markets }: { markets: Market[] }) {
                       ? formatCompactUsd(market.pool)
                       : `${formatCount(market.observedValue)}`}
                   </span>
-                  {market.observedValue === undefined ? "pool" : marketUnit(market.id)}
+                  {market.observedValue === undefined ? "pool" : market.unit ?? "events"}
                 </span>
               </Link>
             );

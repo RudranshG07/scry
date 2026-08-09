@@ -35,14 +35,13 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	var m domain.Market
 	var opens, locks, starts, ends time.Time
 	var challenge *time.Time
-	var ai float64
 
 	err := row.Scan(
 		&m.ID, &m.StreamID, &m.Category, &m.Location, &m.City, &m.Question, &m.Status,
 		&m.ChainID, &m.ContractAddress,
 		&m.Claim.Kind, &m.Claim.Target, &m.Claim.Options,
 		&opens, &locks, &starts, &ends, &challenge,
-		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool, &ai,
+		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool,
 		&m.CurrentRate, &m.Baseline,
 	)
 	if err != nil {

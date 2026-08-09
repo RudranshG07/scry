@@ -8,7 +8,6 @@ import { useToast } from "@/components/ui/toast";
 import { useWallet } from "@/components/wallet-provider";
 import type { Market } from "@/lib/domain";
 import { formatCompactUsd, formatHash, formatMultiplier, formatUsdc } from "@/lib/format";
-import { forecasterConsensusFor } from "@/lib/simulation";
 import { countdownFor, marketPhase } from "@/lib/time";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
@@ -254,9 +253,11 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
         </form>
 
         <div className="border-t border-border px-5 pb-5">
-          <SignalRow label="Scry AI" value={`${market.forecast}%`} />
-          <SignalRow label="Forecasters" value={`${forecasterConsensusFor(market)}%`} />
+          {/* "Scry AI" and "Forecasters" sat here as percentages. Nothing
+              produced either number: the forecast column had no writer at all,
+              and the consensus was derived from the market id. */}
           <SignalRow label="Pool" value={settings.hidePoolValues ? "hidden" : formatCompactUsd(market.pool)} />
+          <SignalRow label="Observers" value={`${market.observers}`} />
           <p className="pt-4 text-[11px] leading-5 text-muted-foreground">
             {mode === "forecast" ? "Forecasts stay on this device." : "Preview only. No funds are submitted."}
           </p>
