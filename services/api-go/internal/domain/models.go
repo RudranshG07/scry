@@ -83,6 +83,9 @@ type Qualification struct {
 	Peak         int     `json:"peak"`
 	Disagreement float64 `json:"disagreement"`
 	Provisional  bool    `json:"provisional"`
+	// What a market on this stream should be set at, measured from what the
+	// camera actually passes in a window.
+	Threshold int `json:"threshold"`
 }
 
 type Observer struct {

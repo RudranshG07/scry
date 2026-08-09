@@ -38,6 +38,11 @@ class Verdict:
     disagreement: float = 0.0
     realtime: float = 0.0
     provisional: bool = False
+    # What a market on this stream should be set at. Left unset the scheduler
+    # falls back to a flat 180 for every camera, so a road that passes a hundred
+    # a window settles "no" every single time and the market is decided before
+    # it opens.
+    threshold: int = 0
 
 
 def _average(samples: list[int]) -> float:
@@ -116,17 +121,30 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
                        counts=unit, subjects=round(primary_avg, 1), peak=peak,
                        disagreement=round(disagreement, 3), realtime=net["realtime_factor"])
 
-    provisional, note = _too_quiet(playlist, claim, primary_avg, seconds, window)
+    provisional, note, threshold = _too_quiet(playlist, claim, primary_avg, seconds, window)
     return Verdict(
-        url, True, note,
+        url, True, note, threshold=threshold,
         counts=unit, subjects=round(primary_avg, 1), peak=peak,
         disagreement=round(disagreement, 3), realtime=net["realtime_factor"],
         provisional=provisional,
     )
 
 
+def settle_near(value: float) -> int:
+    """A threshold a market can honestly turn on.
+
+    Rounded, because a bar of 227 from a twenty second sample claims a precision
+    the sample does not have, and a market reads as arbitrary when its number
+    looks measured to the unit.
+    """
+    if value < 10:
+        return max(1, round(value))
+    step = 5 if value < 100 else 10 if value < 500 else 25
+    return int(step * round(value / step))
+
+
 def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
-               seconds: float, window: float) -> tuple[bool, str]:
+               seconds: float, window: float) -> tuple[bool, str, int]:
     """Whether one subject either way would swing the settled value.
 
     Measured against whatever the market actually settles on. For a level claim
@@ -139,7 +157,8 @@ def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
     line = ((claim or {}).get("options") or {}).get("line")
     if (claim or {}).get("kind") != "crossings" or not line:
         quiet = occupancy < MIN_FOR_PERCENT
-        return quiet, "quiet enough that one subject moves the result" if quiet else "usable"
+        note = "quiet enough that one subject moves the result" if quiet else "usable"
+        return quiet, note, settle_near(occupancy)
 
     from .claims import Claim
     from .crossings import Crossings
@@ -152,9 +171,9 @@ def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
 
     expected = sample.count * (window / seconds) if seconds > 0 else 0.0
     quiet = expected < MIN_FOR_PERCENT
-    return quiet, (
-        f"about {expected:.0f} crossings a window is too few to settle on"
-        if quiet else f"about {expected:.0f} crossings a window")
+    note = (f"about {expected:.0f} crossings a window is too few to settle on"
+            if quiet else f"about {expected:.0f} crossings a window")
+    return quiet, note, settle_near(expected)
 
 
 def main() -> int:

@@ -17,10 +17,11 @@ import subprocess
 import tempfile
 import wave
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from .claims import Claim, Reading
-from .evidence import bundle, digest
+from .evidence import bundle, digest, stamp
 
 # Whisper works on 16k mono, and pulling anything larger is wasted bandwidth.
 SAMPLE_RATE = 16_000
@@ -81,6 +82,47 @@ def occurrences(text: str, target: str) -> int:
     return hits
 
 
+# Words that carry no claim on their own. An n-gram made only of these is
+# grammar rather than a catchphrase: "of the" is said constantly by everyone and
+# is not what anyone would take a position on. "know" is deliberately absent, so
+# "you know" survives as the verbal tic it is.
+FUNCTION_WORDS = frozenset("""
+a an the and or but if so as at by for from in into of on to with is are was
+were be been being am it its this that these those there here i we you he she
+they me us them my your his her our their not no yes do does did have has had
+will would can could should may might must
+""".split())
+
+
+def phrases_in(text: str, longest: int = 3) -> dict[str, int]:
+    """Every phrase said more than once, and how often.
+
+    The countable thing on a talking stream is whatever that person repeats, and
+    only they know what that is — so it is measured rather than guessed, the same
+    way a count line is. Phrases made entirely of function words are dropped:
+    they are how English is assembled, not something anyone would bet on.
+    """
+    words = normalise(text).split()
+    tally: dict[str, int] = {}
+    for size in range(2, longest + 1):
+        for index in range(len(words) - size + 1):
+            gram = words[index:index + size]
+            if all(word in FUNCTION_WORDS for word in gram):
+                continue
+            phrase = " ".join(gram)
+            tally[phrase] = tally.get(phrase, 0) + 1
+    return {phrase: count for phrase, count in tally.items() if count > 1}
+
+
+def listen(url: str, seconds: float, role: str = "primary_vision") -> tuple[str, float]:
+    """Everything heard on a stream, and how many seconds of it there were."""
+    audio = pull_audio(url, seconds)
+    if audio is None:
+        return "", 0.0
+    segments, _ = _load(EARS[role].size).transcribe(audio)
+    return " ".join(segment.text for segment in segments), captured(audio)
+
+
 def pull_audio(url: str, seconds: float) -> str | None:
     """Grab the audio track alone. Video is the majority of the bytes and none
     of the signal for a phrase."""
@@ -125,6 +167,7 @@ class Phrases:
         return True, f'"{claim.target}" said {reading.count} times in {seconds:.0f}s'
 
     def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
+        started = datetime.now(UTC)
         audio = pull_audio(url, seconds)
         if audio is None:
             return Reading(0, [], detail={"reason": "no audio track"})
@@ -160,10 +203,31 @@ class Phrases:
                     index += 1
 
         heard = captured(audio)
+        uptime = round(min(1.0, heard / seconds), 4) if seconds > 0 else 0.0
+
+        # One sample for the window, not one per utterance. Samples are what the
+        # API stores as observations and what the rate is worked out from, and a
+        # point event carries no interval to divide by.
+        #
+        # The transcript is committed to rather than carried: a leaf holds a
+        # digest, so anyone with the recording can show these were the words at
+        # these seconds, without the evidence bundle growing with how talkative
+        # the stream is.
+        spoken_digest = digest("|".join(f"{hit['at']}:{hit['heard']}" for hit in said).encode())
+        sample = {
+            "observedAt": stamp(started),
+            "count": len(said),
+            "intervalSeconds": int(round(heard)),
+            "streamQuality": uptime,
+            "modelVersion": ear.version,
+            "frameDigest": spoken_digest,
+        }
+
         return Reading(
             count=len(said),
-            samples=said,
-            uptime=round(min(1.0, heard / seconds), 4) if seconds > 0 else 0.0,
-            evidence_root=bundle(said)[0] if said else digest(f"{url}|silence".encode()),
-            detail={"words": words, "model": ear.version, "heardSeconds": round(heard, 2)},
+            samples=[sample],
+            uptime=uptime,
+            evidence_root=bundle([sample])[0],
+            detail={"words": words, "model": ear.version,
+                    "heardSeconds": round(heard, 2), "said": said},
         )

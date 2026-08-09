@@ -69,3 +69,72 @@ class EvidenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SampleShapeTest(unittest.TestCase):
+    """What a phrase observer reports has to be an observation.
+
+    Samples go two places that both care about their shape: the evidence leaf,
+    which reads observedAt, count and intervalSeconds, and the API, which
+    decodes them as CountSample. Reporting the transcript entries directly
+    crashed the bundle on every window that found anything, and unit tests that
+    mock observe() never see it.
+    """
+
+    # domain.CountSample in services/api-go/internal/domain/models.go.
+    REQUIRED = {"observedAt", "count", "intervalSeconds", "streamQuality", "modelVersion"}
+
+    def _reading(self, hits):
+        from unittest import mock
+
+        word = lambda text, start: mock.Mock(word=text, start=start)
+        segment = mock.Mock(text=" ".join(w for w, _ in hits) or "quiet",
+                            words=[word(w, at) for w, at in hits])
+        model = mock.Mock()
+        model.transcribe.return_value = ([segment], None)
+
+        with mock.patch("scry_vision.phrases.pull_audio", return_value="/tmp/fake.wav"), \
+             mock.patch("scry_vision.phrases.captured", return_value=40.0), \
+             mock.patch("scry_vision.phrases._load", return_value=model):
+            return Phrases().observe("url", Claim("s", "phrase", "hello guys"), 40, "primary_vision")
+
+    def test_a_sample_carries_every_field_an_observation_needs(self):
+        reading = self._reading([("hello", 1.0), ("guys", 1.2)])
+        self.assertEqual(len(reading.samples), 1)
+        self.assertTrue(self.REQUIRED.issubset(reading.samples[0]))
+
+    def test_the_evidence_bundle_can_be_built_from_them(self):
+        from scry_vision.evidence import bundle
+
+        reading = self._reading([("hello", 1.0), ("guys", 1.2)])
+        # The bug: this raised KeyError('observedAt') for every match found.
+        self.assertEqual(bundle(reading.samples)[0], reading.evidence_root)
+        self.assertTrue(reading.evidence_root.startswith("0x"))
+
+    def test_the_count_agrees_with_the_sample(self):
+        reading = self._reading([("hello", 1.0), ("guys", 1.2)])
+        self.assertEqual(reading.count, 1)
+        self.assertEqual(reading.samples[0]["count"], reading.count)
+
+    def test_the_transcript_survives_for_anyone_checking_the_result(self):
+        reading = self._reading([("hello", 1.0), ("guys", 1.2)])
+        said = reading.detail["said"]
+        self.assertEqual(len(said), 1)
+        self.assertIn("at", said[0])
+
+    def test_a_window_with_no_match_still_reports_a_usable_sample(self):
+        reading = self._reading([("nothing", 1.0), ("here", 1.2)])
+        self.assertEqual(reading.count, 0)
+        self.assertTrue(self.REQUIRED.issubset(reading.samples[0]))
+        self.assertEqual(reading.samples[0]["count"], 0)
+
+    def test_a_short_capture_reports_the_uptime_it_actually_heard(self):
+        from unittest import mock
+
+        model = mock.Mock()
+        model.transcribe.return_value = ([mock.Mock(text="quiet", words=[])], None)
+        with mock.patch("scry_vision.phrases.pull_audio", return_value="/tmp/fake.wav"), \
+             mock.patch("scry_vision.phrases.captured", return_value=10.0), \
+             mock.patch("scry_vision.phrases._load", return_value=model):
+            reading = Phrases().observe("url", Claim("s", "phrase", "hello"), 40, "primary_vision")
+        self.assertEqual(reading.uptime, 0.25)

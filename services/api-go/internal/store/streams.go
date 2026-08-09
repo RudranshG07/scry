@@ -111,7 +111,7 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	note, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"inspectedAt": now,
 		// The engine's probation reads checkedAt, so a stream suspended here
 		// recovers on the same clock as one suspended for disagreement. Without
@@ -124,7 +124,15 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 		"peak":         v.Peak,
 		"disagreement": v.Disagreement,
 		"provisional":  v.Provisional,
-	})
+	}
+	// Only when it was measured. An inspection that failed before it could count
+	// reports zero, and writing that would set every market on the stream to
+	// "more than nothing", which settles yes on a single passer-by.
+	if v.Threshold > 0 {
+		fields["threshold"] = v.Threshold
+	}
+
+	note, err := json.Marshal(fields)
 	if err != nil {
 		return err
 	}

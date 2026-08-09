@@ -33,6 +33,7 @@ def report(api: str, stream_id: str, verdict) -> int:
         "peak": verdict.peak,
         "disagreement": verdict.disagreement,
         "provisional": verdict.provisional,
+        "threshold": verdict.threshold,
     }).encode()
     request = urllib.request.Request(
         f"{api.rstrip('/')}/v1/streams/{stream_id}/qualification",
