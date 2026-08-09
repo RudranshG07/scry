@@ -107,6 +107,11 @@ def phrases_in(text: str, longest: int = 3) -> dict[str, int]:
     for size in range(2, longest + 1):
         for index in range(len(words) - size + 1):
             gram = words[index:index + size]
+            # Mostly grammar is still grammar. "the failure of" is two thirds
+            # function words and came back off a news stream as a catchphrase,
+            # which it plainly is not; "hello guys" and "you know" both survive.
+            if sum(word in FUNCTION_WORDS for word in gram) * 2 > len(gram):
+                continue
             if all(word in FUNCTION_WORDS for word in gram):
                 continue
             phrase = " ".join(gram)

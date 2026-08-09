@@ -24,6 +24,10 @@ from .claims import Claim
 # a camera that turns out to be a fish tank.
 TRIAL_SECONDS = 25
 MIN_CROSSINGS = 2
+# Three, not two. A news stream repeated "the failure of" twice in fifty
+# seconds and that came back as a catchphrase — two of anything inside a short
+# listen is how language repeats, not how somebody talks.
+MIN_SAYINGS = 3
 
 CANDIDATES = {
     "across the middle": [[0.05, 0.50], [0.95, 0.50]],
@@ -70,6 +74,50 @@ def propose_line(playlist: str, target: str, seconds: float = TRIAL_SECONDS) -> 
         if reading.count > best[1]:
             best = (line, reading.count, note)
     return best
+
+
+def propose_phrase(url: str, seconds: float = TRIAL_SECONDS) -> tuple[str | None, int, str]:
+    """The thing this stream says often enough to count.
+
+    A catchphrase cannot be searched for, only heard. Whoever is talking decides
+    what they repeat, so the phrase is measured off the stream the same way a
+    count line is, rather than picked from a list somebody wrote in advance.
+    """
+    from .phrases import listen, phrases_in
+
+    heard, seconds_heard = listen(url, seconds)
+    if seconds_heard <= 0 or not heard.strip():
+        return None, 0, "nothing was said"
+
+    repeated = phrases_in(heard)
+    if not repeated:
+        return None, 0, "there is speech but nothing repeats"
+
+    # Longest wins ties: "hello guys" is a phrase somebody would take a position
+    # on, "hello" on its own is half of one.
+    phrase, count = max(repeated.items(), key=lambda kv: (kv[1], len(kv[0].split())))
+    return phrase, count, f'said "{phrase}" {count} times'
+
+
+def assess_audio(url: str, seconds: float = TRIAL_SECONDS) -> dict:
+    """Whether this link can host a phrase market, and on what phrase."""
+    from .probe import resolve
+
+    playlist = resolve(url)
+    if not playlist:
+        return {"url": url, "usable": False, "reason": "no live stream at that link"}
+
+    phrase, count, note = propose_phrase(playlist, seconds)
+    if phrase is None or count < MIN_SAYINGS:
+        return {"url": url, "usable": False, "reason": note}
+
+    return {
+        "url": url,
+        "usable": True,
+        "reason": f"{note} in {seconds:.0f}s",
+        "category": "Speech",
+        "claim": {"kind": "phrase", "target": phrase, "options": {}},
+    }
 
 
 def assess(url: str, seconds: float = TRIAL_SECONDS) -> dict:
@@ -129,7 +177,9 @@ def submit(api: str, token: str, name: str, url: str, verdict: dict, timezone: s
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="scry-discover")
-    parser.add_argument("--query", default="live traffic camera intersection 24/7")
+    parser.add_argument("--query", default="")
+    parser.add_argument("--listen", action="store_true",
+                        help="look for things being said rather than things crossing a line")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--seconds", type=float, default=TRIAL_SECONDS)
     parser.add_argument("--timezone", default="UTC")
@@ -139,14 +189,17 @@ def main() -> int:
                         help="add what qualifies, rather than only reporting it")
     args = parser.parse_args()
 
-    found = live_candidates(args.query, args.limit)
+    query = args.query or ("live stream just chatting talking"
+                           if args.listen else "live traffic camera intersection 24/7")
+    found = live_candidates(query, args.limit)
     if not found:
         print("nothing live matched that search", flush=True)
         return 0
 
     kept = 0
     for candidate in found:
-        verdict = assess(candidate["url"], args.seconds)
+        look = assess_audio if args.listen else assess
+        verdict = look(candidate["url"], args.seconds)
         mark = "takes" if verdict["usable"] else "fails"
         print(f"  {candidate['title'][:52]:<52} {mark} — {verdict['reason']}", flush=True)
         if not verdict["usable"]:
