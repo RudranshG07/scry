@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from datetime import UTC, datetime, timedelta
 
@@ -6,7 +7,8 @@ from scry_vision.probe import verdict
 from scry_vision.scenes import scene_for
 from scry_vision.calibrate import TOLERANCE_FLOOR, TOLERANCE_PERCENT, agrees, allowed_spread, spread, summarise
 from scry_vision.claims import Reading
-from scry_vision.worker import JOIN_GRACE, StreamMismatch, as_report, at, guard, pick, slot
+from scry_vision.worker import (JOIN_GRACE, StreamMismatch, as_report, at, guard, live_camera,
+                                pick, slot)
 
 
 def market(id_, stream, status="Observing"):
@@ -453,3 +455,36 @@ class ReportTest(unittest.TestCase):
         report = as_report(Reading(0, [], detail={"reason": "stream unreachable"}), 300)
         self.assertEqual(report["uptime"], 0.0)
         self.assertEqual(report["evidenceRoot"], "")
+
+
+class CameraTest(unittest.TestCase):
+    """The playlist is resolved per window, not once at startup.
+
+    A signed playlist expires. The observer kept watching the dead url, frames
+    stopped arriving, and every report came back with a count of zero and no
+    uptime — which is what a market invalidating for ten days looked like from
+    the outside.
+    """
+
+    def test_the_relay_is_preferred_when_it_is_serving(self):
+        with mock.patch("scry_vision.worker.serving", return_value=True):
+            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888")
+        self.assertEqual(got, "http://relay:8888/stream-x/index.m3u8")
+
+    def test_a_relay_that_is_not_serving_does_not_blind_the_observer(self):
+        with mock.patch("scry_vision.worker.serving", return_value=False), \
+             mock.patch("scry_vision.probe.resolve", return_value="https://cdn/live.m3u8") as resolve:
+            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888")
+        self.assertEqual(got, "https://cdn/live.m3u8")
+        resolve.assert_called_once()
+
+    def test_the_source_is_resolved_again_each_time_it_is_asked_for(self):
+        urls = iter(["https://cdn/one.m3u8", "https://cdn/two.m3u8"])
+        with mock.patch("scry_vision.worker.serving", return_value=False), \
+             mock.patch("scry_vision.probe.resolve", side_effect=lambda _: next(urls)):
+            first = live_camera("stream-x", "https://youtube.com/watch?v=a", None)
+            second = live_camera("stream-x", "https://youtube.com/watch?v=a", None)
+        self.assertNotEqual(first, second)
+
+    def test_nothing_to_watch_reports_nothing_rather_than_guessing(self):
+        self.assertIsNone(live_camera("stream-x", None, None))

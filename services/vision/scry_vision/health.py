@@ -10,7 +10,13 @@ GOOD_CONTRAST = 60.0
 MIN_CONTRAST = 20.0
 
 MIN_VISIBILITY = MIN_CONTRAST / GOOD_CONTRAST
-MIN_UPTIME = 0.99
+
+# Blind time may not move the count by more than the settlement tolerance, which
+# is 5%. At 0.99 this floor was stricter than the bar it protects: a fifteen
+# minute window allowed nine seconds of gap, two observers on a healthy CDN
+# stream independently measured about twenty, and every market they counted was
+# thrown away for footage quality better than the result needed.
+MIN_UPTIME = 0.95
 
 
 # A jump this large in the footage means something could cross unseen.

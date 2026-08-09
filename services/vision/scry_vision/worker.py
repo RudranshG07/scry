@@ -61,6 +61,19 @@ def serving(playlist: str, timeout: float = 4.0) -> bool:
         return False
 
 
+def live_camera(stream: str, source: str | None, relay: str | None) -> str | None:
+    """A playlist url good right now, preferring the shared relay."""
+    if relay:
+        relayed = f"{relay.rstrip('/')}/{stream}/index.m3u8"
+        if serving(relayed):
+            return relayed
+    if source:
+        from .probe import resolve
+
+        return resolve(source)
+    return None
+
+
 def claim_of(market: dict, stream: str):
     """What this market counts, defaulting to whatever crosses the line."""
     from .claims import Claim
@@ -105,7 +118,8 @@ def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
 
 
 def run(api: str, stream: str, camera: str, market_id: str | None, observer: str,
-        role: str, cap: float, poll: float) -> int:
+        role: str, cap: float, poll: float, source: str | None = None,
+        relay: str | None = None) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
     import scry_vision  # noqa: F401  registers the observers
     from .claims import Claim, observer_for
@@ -151,6 +165,14 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             done.add(market["id"])
             continue
 
+        # Resolved per window, not once at startup. A signed playlist expires,
+        # and the observer went on watching the dead url: frames stopped
+        # arriving, every report came back with a count of zero and no uptime,
+        # and every market it touched invalidated with nothing saying why.
+        watching = camera
+        if source or relay:
+            watching = live_camera(stream, source, relay) or camera
+
         left = (closes - now).total_seconds()
         print(f"observing {market['id']} on {stream} for {left:.0f}s as {role}", flush=True)
         claim = claim_of(market, stream)
@@ -162,7 +184,7 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             done.add(market["id"])
             continue
 
-        reading = watcher.observe(camera, claim, left, role)
+        reading = watcher.observe(watching, claim, left, role)
         result = as_report(reading, left)
         print("  " + json.dumps({k: v for k, v in result.items() if k != "counts"}), flush=True)
 
@@ -220,7 +242,8 @@ def main() -> int:
 
     try:
         return run(args.api, args.stream, camera, args.market, args.observer,
-                   args.role, args.max_seconds, args.poll)
+                   args.role, args.max_seconds, args.poll,
+                   source=args.youtube, relay=args.relay)
     except StreamMismatch as error:
         print(f"refusing to report: {error}", file=sys.stderr)
         return 2

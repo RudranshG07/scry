@@ -36,7 +36,7 @@ export function Resolution({ market }: { market: Market }) {
         />
         <Criterion label="Observation window" value={`${formatSchedule(market.observationStartsAt)} to ${formatSchedule(market.observationEndsAt)}`} />
         <Criterion label="Quorum" value="Two of three independent observers must sign the same value." />
-        <Criterion label="Minimum uptime" value="99.0% of the window, or the market invalidates and refunds." />
+        <Criterion label="Minimum uptime" value="95.0% of the window, or the market invalidates and refunds." />
         <Criterion label="Challenge window" value={`${challengeWindowMs / 60_000} minutes after the result is proposed.`} />
       </dl>
 

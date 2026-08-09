@@ -145,6 +145,19 @@ class Crossings:
             if position > 0:
                 last_position = position
             health.frames += 1
+
+            # Count over a fixed cadence of footage, not over however many frames
+            # this machine got through. Two observers on the same window detected
+            # the same 14868 and 14871 objects and still reported 42 and 53
+            # crossings: the faster model simply read 25% more frames, so its
+            # tracker saw more of every trajectory. Left alone, the result of a
+            # market depends on the hardware counting it.
+            if last_sampled is not None and position > 0 and position - last_sampled < SAMPLE_INTERVAL:
+                continue
+            if position > 0:
+                last_sampled = position
+
+            sampled += 1
             chained = chain(chained, frame.tobytes())
 
             # Native frame, not a downscaled one: resizing before inference cost
