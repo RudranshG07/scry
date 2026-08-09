@@ -18,6 +18,26 @@ type Inspections interface {
 	RecordQualification(context.Context, string, domain.Qualification) error
 }
 
+// Watchable is the part of the store that says which streams can host a market.
+type Watchable interface {
+	Watchable(context.Context) ([]domain.StreamSource, error)
+}
+
+func (server *Server) getStreams(writer http.ResponseWriter, request *http.Request) {
+	store, ok := server.store.(Watchable)
+	if !ok {
+		writeError(writer, http.StatusNotImplemented, "streams_unavailable", "Listing streams needs a database.")
+		return
+	}
+
+	streams, err := store.Watchable(request.Context())
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "stream_store_unavailable", "Streams are temporarily unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, streams)
+}
+
 // Submissions is the part of the store the front door needs.
 type Submissions interface {
 	SubmitStream(context.Context, domain.StreamSubmission, string) (domain.StreamSource, error)

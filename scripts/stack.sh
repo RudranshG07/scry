@@ -16,20 +16,23 @@ LOGS="${SCRY_LOG_DIR:-/tmp}"
 
 say() { printf '  %-11s %s\n' "$1" "$2"; }
 
-# Only streams the relay is actually serving. Pointing an observer at a path
-# with no ingest produces a report with no evidence, which invalidates the
-# market just as surely as no observer at all.
+# Streams the API says are worth watching, with the source to watch them on.
+#
+# This used to ask the relay which paths it was serving, so with the relay down
+# it returned nothing, no observer ever started, and every market invalidated
+# for ten days with no error anywhere saying why. The API knows which streams
+# qualified and what their source is; the relay is an optimisation on top.
 ingesting() {
-  curl -s --max-time 10 "http://127.0.0.1:${SCRY_MEDIA_API_PORT:-9997}/v3/paths/list" 2>/dev/null |
+  curl -s --max-time 10 "$API/v1/streams" 2>/dev/null |
     python3 -c '
 import json, sys
 try:
-    paths = json.load(sys.stdin)["items"]
+    streams = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
-for path in paths:
-    if path.get("ready") and path.get("bytesReceived", 0) > 0:
-        print(path["name"])
+for stream in streams:
+    if stream.get("sourceUrl"):
+        print(stream["id"] + " " + stream["sourceUrl"])
 ' 2>/dev/null || true
 }
 
@@ -46,8 +49,8 @@ status() {
   [ "$count" -gt 0 ] && say observers "$count running" || say observers "NONE — every market will invalidate"
 
   local streams
-  streams=$(ingesting | tr '\n' ' ')
-  say ingesting "${streams:-none}"
+  streams=$(ingesting | awk '{print $1}' | tr '\n' ' ')
+  say watchable "${streams:-none}"
 }
 
 observers() {
@@ -72,18 +75,21 @@ observers() {
   local keepawake=""
   command -v caffeinate >/dev/null 2>&1 && keepawake="caffeinate -i"
 
-  for stream in $streams; do
+  while read -r stream source; do
+    [ -z "$stream" ] && continue
     start_observer() {
+      # --youtube as well as --relay: the relay is preferred when it is serving
+      # this path and skipped when it is not, rather than blinding the observer.
       # shellcheck disable=SC2086
       nohup $keepawake env PYTHONPATH=services/vision "$python" -m scry_vision.worker \
-        --stream "$stream" --relay "$RELAY" --api "$API" \
+        --stream "$stream" --youtube "$source" --relay "$RELAY" --api "$API" \
         --observer "$1" --role "$2" --poll 10 \
         > "$LOGS/obs-$stream-$1.log" 2>&1 < /dev/null &
     }
     start_observer vision-01 primary_vision
     start_observer verify-01 verification
-    say started "$stream (2 observers on the shared ingest)"
-  done
+    say started "$stream (2 observers)"
+  done <<< "$streams"
 }
 
 case "${1:-status}" in

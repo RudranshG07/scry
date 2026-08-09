@@ -70,6 +70,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /v1/markets/{id}/messages", server.postMessage)
 	server.mux.HandleFunc("GET /v1/notifications", server.getNotifications)
 	server.mux.HandleFunc("GET /v1/streams/{id}/playback-token", server.getPlaybackToken)
+	server.mux.HandleFunc("GET /v1/streams", server.getStreams)
 	server.mux.HandleFunc("POST /v1/streams", server.postStream)
 	server.mux.HandleFunc("GET /v1/streams/pending", server.getPendingStreams)
 	server.mux.HandleFunc("POST /v1/streams/{id}/qualification", server.postQualification)

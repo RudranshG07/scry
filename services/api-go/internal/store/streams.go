@@ -74,6 +74,34 @@ func (s *Postgres) SubmitStream(ctx context.Context, sub domain.StreamSubmission
 	return out, nil
 }
 
+// Watchable lists streams a market could be opened on right now: qualified, not
+// on probation for being too quiet, and with a source to watch. It is the same
+// set the scheduler works from, so anything reading this sees what the engine
+// sees rather than a copy that drifts.
+func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, coalesce(source_url, ''), status, coalesce(default_claim, '{}'::jsonb)
+		FROM streams
+		WHERE status = 'Qualified'
+		  AND coalesce(btrim(source_url), '') <> ''
+		  AND coalesce((qualification->>'provisional')::boolean, false) = false
+		ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list watchable streams: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.StreamSource{}
+	for rows.Next() {
+		var stream domain.StreamSource
+		if err := rows.Scan(&stream.ID, &stream.SourceURL, &stream.Status, &stream.Claim); err != nil {
+			return nil, err
+		}
+		out = append(out, stream)
+	}
+	return out, rows.Err()
+}
+
 // PendingQualification lists streams due another look. A link that qualified on
 // submission can be offline, re-aimed or dark a week later, and a market on one
 // can only ever void.
