@@ -2,7 +2,8 @@ import unittest
 from unittest import mock
 
 from scry_vision.claims import Reading
-from scry_vision.discover import CANDIDATES, MIN_CROSSINGS, assess, live_candidates, propose_line
+from scry_vision.discover import (CANDIDATES, MIN_CROSSINGS, MIN_SAYINGS, assess, assess_audio,
+                                  live_candidates, propose_line, propose_phrase)
 
 
 class CandidateTest(unittest.TestCase):
@@ -122,3 +123,54 @@ class QuietHoursTest(unittest.TestCase):
             out = assess("https://example.com/live", seconds=1)
         self.assertFalse(out["usable"])
         lines.assert_not_called()
+
+
+class PhraseProposalTest(unittest.TestCase):
+    """What a talking stream should count is measured, not chosen.
+
+    Nobody can search for a catchphrase; only the person talking decides what
+    they repeat. These cases are the ones real streams actually produced.
+    """
+
+    def _heard(self, text, seconds=70.0):
+        return mock.patch("scry_vision.phrases.listen", return_value=(text, seconds))
+
+    def test_a_repeated_catchphrase_is_what_comes_back(self):
+        with self._heard("hello guys welcome hello guys today hello guys"):
+            phrase, count, _ = propose_phrase("playlist", 70)
+        self.assertEqual(phrase, "hello guys")
+        self.assertEqual(count, 3)
+
+    def test_news_copy_offers_nothing_to_bet_on(self):
+        # A live news stream proposed "the failure of", said twice in fifty
+        # seconds, which is how English repeats rather than how someone talks.
+        with self._heard("the failure of the plan and the failure of the talks"):
+            out = assess_audio("https://example.com/live", 50)
+        self.assertFalse(out["usable"])
+
+    def test_contraction_fragments_are_not_phrases(self):
+        # Talk radio proposed "ve got" and "she s" until apostrophes stopped
+        # splitting words apart.
+        with self._heard("we've got it we've got it we've got it"):
+            phrase, _, _ = propose_phrase("playlist", 70)
+        self.assertNotIn(" s", f" {phrase}")
+        self.assertFalse(phrase.split()[0] in ("s", "ve", "re", "ll", "t"))
+
+    def test_a_silent_stream_is_refused(self):
+        with mock.patch("scry_vision.phrases.listen", return_value=("", 0.0)):
+            out = assess_audio("https://example.com/live", 70)
+        self.assertFalse(out["usable"])
+
+    def test_speech_that_never_repeats_is_refused(self):
+        with self._heard("every single word here occurs exactly one time only"):
+            out = assess_audio("https://example.com/live", 70)
+        self.assertFalse(out["usable"])
+
+    def test_a_qualifying_stream_comes_back_as_a_phrase_claim(self):
+        with self._heard("hello guys " * 5), \
+             mock.patch("scry_vision.probe.resolve", return_value="playlist"):
+            out = assess_audio("https://example.com/live", 70)
+        self.assertTrue(out["usable"])
+        self.assertEqual(out["claim"]["kind"], "phrase")
+        self.assertEqual(out["claim"]["target"], "hello guys")
+        self.assertEqual(out["category"], "Speech")

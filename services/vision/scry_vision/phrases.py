@@ -56,8 +56,13 @@ def normalise(text: str) -> str:
     Punctuation and case are the transcriber's choices, not the speaker's, so
     "Hello, guys!" and "hello guys" are the same utterance and must not depend
     on which model heard it.
+
+    Apostrophes close up rather than split. Turning them into spaces breaks
+    "we've got" into "we ve got", and the leftover "ve" reads as a word: talk
+    radio came back proposing "ve got" and "she s" as things to bet on.
     """
-    return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+    closed = re.sub(r"['‘’ʼ]", "", text.lower())
+    return re.sub(r"[^a-z0-9 ]+", " ", closed).strip()
 
 
 def occurrences(text: str, target: str) -> int:

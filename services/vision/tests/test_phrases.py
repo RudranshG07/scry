@@ -30,7 +30,16 @@ class MatchTest(unittest.TestCase):
         self.assertEqual(occurrences("anything at all", ""), 0)
 
     def test_normalise_keeps_words_and_drops_decoration(self):
-        self.assertEqual(normalise("Let's GO!! 100%"), "let s go  100")
+        # Contractions close up rather than split. Splitting them left "s" and
+        # "ve" behind as words, and talk radio came back proposing "she s" and
+        # "ve got" as phrases to run markets on.
+        self.assertEqual(normalise("Let's GO!! 100%"), "lets go  100")
+
+    def test_a_contraction_matches_however_it_was_written(self):
+        self.assertEqual(occurrences("I don't stop", "dont stop"), 1)
+        self.assertEqual(occurrences("I dont stop", "don't stop"), 1)
+        # Whisper writes a curly apostrophe; a submitter types a straight one.
+        self.assertEqual(occurrences("I don\u2019t stop", "don't stop"), 1)
 
 
 class ObserverTest(unittest.TestCase):

@@ -132,13 +132,22 @@ func (e *Engine) unsourced(ctx context.Context) error {
 
 // reinstate clears the window history too, so a stream is judged on what it
 // does next rather than on why it was suspended.
+//
+// Coming off probation means looking again, not assuming the camera came back.
+// It returns provisional and with its last inspection forgotten, so the sweep
+// picks it up and the scheduler leaves it alone until something has actually
+// watched it. Reinstating straight to Qualified put dead links back to work:
+// a camera whose stream had ended kept its "could not find a live stream"
+// reason, opened markets nobody could watch, and churned through invalidating
+// them until it was suspended again two hours later.
 func (e *Engine) reinstate(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE streams
 		SET status = 'Qualified',
-		    qualification = qualification || jsonb_build_object(
+		    qualification = (qualification - 'inspectedAt' - 'reason') || jsonb_build_object(
 		        'checkedAt', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-		        'onProbation', true),
+		        'onProbation', true,
+		        'provisional', true),
 		    updated_at = NOW()
 		WHERE status = 'Suspended'
 		  AND (qualification->>'checkedAt')::timestamptz < NOW() - $1::interval
