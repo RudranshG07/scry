@@ -26,6 +26,9 @@ func (e *Engine) qualify(ctx context.Context) error {
 	if err := e.reinstate(ctx); err != nil {
 		return err
 	}
+	if err := e.voidUnwatchable(ctx); err != nil {
+		return err
+	}
 
 	// Only windows since the last decision, or a reinstated stream is judged on
 	// the readings that suspended it.
@@ -109,11 +112,16 @@ func verdict(ws []window) (string, int, bool) {
 
 // unsourced demotes streams nobody can watch, which would sit Qualified forever
 // and never publish.
+//
+// Watchable means having a source_url, not a relay playback id. A submitted link
+// never has the latter, so asking for it demoted every stream that came through
+// the front door back to Candidate the moment an inspection qualified it, and
+// nothing anyone submitted could ever reach a market.
 func (e *Engine) unsourced(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE streams SET status = 'Candidate', updated_at = NOW()
 		WHERE status IN ('Qualified', 'Suspended')
-		  AND coalesce(btrim(public_playback_id), '') = ''
+		  AND coalesce(btrim(source_url), '') = ''
 		RETURNING id`)
 	if err != nil {
 		return fmt.Errorf("demote unsourced streams: %w", err)
@@ -126,6 +134,36 @@ func (e *Engine) unsourced(ctx context.Context) error {
 			return err
 		}
 		e.log.Warn("stream has no playback source", "stream", id, "status", "Candidate")
+	}
+	return rows.Err()
+}
+
+// voidUnwatchable closes markets whose stream has been suspended.
+//
+// Suspending a camera stopped new markets but left the ones already in flight
+// open, so a market on a stream we know has gone dark kept taking positions it
+// could only ever void. Windows already being observed are left alone: they may
+// still resolve, and the resolver invalidates them if no report arrives.
+func (e *Engine) voidUnwatchable(ctx context.Context) error {
+	rows, err := e.pool.Query(ctx, `
+		UPDATE markets m
+		SET status = 'Invalid', updated_at = NOW()
+		FROM streams s
+		WHERE s.id = m.stream_id
+		  AND s.status = 'Suspended'
+		  AND m.status IN ('Scheduled', 'Open', 'Locked')
+		RETURNING m.id, m.stream_id`)
+	if err != nil {
+		return fmt.Errorf("void markets on suspended streams: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, stream string
+		if err := rows.Scan(&id, &stream); err != nil {
+			return err
+		}
+		e.log.Info("market voided, its stream is suspended", "market", id, "stream", stream)
 	}
 	return rows.Err()
 }

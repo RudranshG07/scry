@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +231,30 @@ func TestQuestionMatchesWhatIsBeingCounted(t *testing.T) {
 	crossed := questionFor(domain.Claim{Kind: "crossings", Target: "anything"}, 180, "vehicles")
 	if !strings.Contains(crossed, "180 vehicles cross the count line") {
 		t.Errorf("unexpected crossings question %q", crossed)
+	}
+}
+
+func TestWatchableMeansASourceNotARelayPath(t *testing.T) {
+	// The scheduler and the demotion sweep have to agree on what makes a stream
+	// watchable. They disagreed: scheduling asked for source_url while demotion
+	// asked for public_playback_id, so a submitted link qualified and was sent
+	// straight back to Candidate before it could ever open a market.
+	source, err := os.ReadFile("qualify.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedule, err := os.ReadFile("schedule.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(source), "btrim(public_playback_id)") {
+		t.Error("demotion still requires a relay playback id, which submitted streams never have")
+	}
+	if !strings.Contains(string(source), "btrim(source_url)") {
+		t.Error("demotion no longer checks for a source at all")
+	}
+	if !strings.Contains(string(schedule), "btrim(s.source_url)") {
+		t.Error("scheduling no longer checks for a source at all")
 	}
 }

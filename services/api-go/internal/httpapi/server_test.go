@@ -9,11 +9,10 @@ import (
 
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 	"github.com/RudranshG07/scry/services/api-go/internal/httpapi"
-	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
 
 func server() http.Handler {
-	return httpapi.New(store.NewMemory(), nil, "http://127.0.0.1:3000")
+	return httpapi.New(newEmptyStore(), nil, "http://127.0.0.1:3000")
 }
 
 func request(t *testing.T, method string, path string, body []byte) *httptest.ResponseRecorder {

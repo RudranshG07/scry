@@ -19,7 +19,7 @@ import (
 func main() {
 	settings := config.Load()
 
-	var data store.Store = store.NewMemory()
+	var data store.Store
 	if settings.DatabaseURL != "" {
 		startup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		postgres, err := store.NewPostgres(startup, settings.DatabaseURL)
@@ -35,14 +35,12 @@ func main() {
 		engineCtx, stopEngine := context.WithCancel(context.Background())
 		defer stopEngine()
 		go engine.New(postgres.Pool(), slog.Default()).Run(engineCtx)
-	} else if os.Getenv("SCRY_USE_MEMORY_STORE") == "1" {
-		slog.Warn("serving from the in-memory store; nothing here was observed")
 	} else {
-		// The in-memory store serves invented markets that are indistinguishable
-		// from real ones over the API. Warning and carrying on has already cost
-		// hours here twice, once because the variable was spelled DATABASE_URL.
-		// Refusing to start is the only version that cannot be missed.
-		slog.Error("SCRY_DATABASE_URL is unset. Set it, or SCRY_USE_MEMORY_STORE=1 to serve the simulator on purpose.")
+		// There is no fallback store. There used to be one serving invented
+		// markets indistinguishable from real ones over the API, which cost
+		// hours here twice. Nothing this serves is worth reading unless it was
+		// observed, so with no database there is nothing to serve.
+		slog.Error("SCRY_DATABASE_URL is unset, and there is nothing to serve without it.")
 		os.Exit(1)
 	}
 

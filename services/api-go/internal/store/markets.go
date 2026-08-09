@@ -20,9 +20,6 @@ const marketQuery = `
 	       m.observed_value, m.winning_outcome_id,
 	       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
 	                 WHERE p.market_id = m.id), 0)::float8,
-	       COALESCE((SELECT h.probability FROM market_probability_history h
-	                 WHERE h.market_id = m.id AND h.source = 'scry_ai'
-	                 ORDER BY h.recorded_at DESC LIMIT 1), 0)::float8,
 	       COALESCE((SELECT SUM(c.event_count)::float8 * 60 / NULLIF(SUM(c.interval_seconds), 0)
 	                 FROM count_observations c
 	                 WHERE c.stream_id = m.stream_id
@@ -57,7 +54,6 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	m.ObservationStartsAt = stamp(starts)
 	m.ObservationEndsAt = stamp(ends)
 	m.ResolvedAt = stampOrNil(challenge)
-	m.Forecast = round(ai*100, 0)
 	m.Unit = domain.UnitFor(m.Category)
 	m.CurrentRate = round(m.CurrentRate, 1)
 	m.Baseline = round(m.Baseline, 1)

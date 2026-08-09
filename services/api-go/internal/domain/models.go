@@ -30,7 +30,6 @@ type Market struct {
 	Status      string  `json:"status"`
 	Countdown   string  `json:"countdown"`
 	Pool        float64 `json:"pool"`
-	Forecast    float64 `json:"forecast"`
 	CurrentRate float64 `json:"currentRate"`
 	Baseline    float64 `json:"baseline"`
 	Observers   int     `json:"observers"`
