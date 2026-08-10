@@ -35,7 +35,8 @@ export function Resolution({ market }: { market: Market }) {
           value={bar ? `Resolves "${bar}" against the observed count.` : "Published with the market rule."}
         />
         <Criterion label="Observation window" value={`${formatSchedule(market.observationStartsAt)} to ${formatSchedule(market.observationEndsAt)}`} />
-        <Criterion label="Quorum" value="Two of three independent observers must sign the same value." />
+        <Criterion label="Quorum" value={`${market.observersRequired} independent observers must sign the same value.`} />
+        <Criterion label="Agreement" value="Their counts must be within 20%, which is what two different detectors reach on identical footage." />
         <Criterion label="Minimum uptime" value="95.0% of the window, or the market invalidates and refunds." />
         <Criterion label="Challenge window" value={`${challengeWindowMs / 60_000} minutes after the result is proposed.`} />
       </dl>

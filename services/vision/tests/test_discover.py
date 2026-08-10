@@ -45,8 +45,10 @@ class ProposeLineTest(unittest.TestCase):
 
 
 class AssessTest(unittest.TestCase):
-    def _verdict(self, usable=True, counts="vehicles", reason="usable", provisional=False):
-        return mock.Mock(usable=usable, counts=counts, reason=reason, provisional=provisional)
+    def _verdict(self, usable=True, counts="vehicles", reason="usable", provisional=False,
+                 subjects=12.0):
+        return mock.Mock(usable=usable, counts=counts, reason=reason,
+                         provisional=provisional, subjects=subjects)
 
     def test_a_link_with_no_live_stream_is_refused_before_anything_is_watched(self):
         with mock.patch("scry_vision.probe.resolve", return_value=None) as resolve:
@@ -114,10 +116,23 @@ class SearchTest(unittest.TestCase):
 
 
 class QuietHoursTest(unittest.TestCase):
+    def test_a_busy_scene_is_tried_for_lines_even_when_occupancy_calls_it_quiet(self):
+        # Occupancy is the wrong yardstick for a line claim: Bangkok's Sukhumvit
+        # Road at midday came back provisional on subjects in frame while
+        # plainly passing hundreds over a window.
+        with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
+             mock.patch("scry_vision.qualify.inspect",
+                        return_value=mock.Mock(usable=True, provisional=True, subjects=12.0,
+                                               counts="vehicles", reason="quiet enough")), \
+             mock.patch("scry_vision.discover.propose_line",
+                        return_value=([[0.05, 0.5], [0.95, 0.5]], 9, "across the middle")):
+            out = assess("https://example.com/live", seconds=1)
+        self.assertTrue(out["usable"], out["reason"])
+
     def test_a_camera_that_is_merely_empty_now_is_not_tried_for_lines(self):
         with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
              mock.patch("scry_vision.qualify.inspect",
-                        return_value=mock.Mock(usable=True, provisional=True,
+                        return_value=mock.Mock(usable=True, provisional=True, subjects=0.9,
                                                counts="people", reason="nothing much in view right now")), \
              mock.patch("scry_vision.discover.propose_line") as lines:
             out = assess("https://example.com/live", seconds=1)

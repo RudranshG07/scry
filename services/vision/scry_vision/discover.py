@@ -134,10 +134,14 @@ def assess(url: str, seconds: float = TRIAL_SECONDS) -> dict:
     seen = inspect(url, seconds=seconds)
     if not seen.usable:
         return {"url": url, "usable": False, "reason": seen.reason}
-    # Provisional means the camera is fine and the scene is empty at this hour.
-    # Trying four lines against an empty road is two minutes to learn nothing;
-    # the next sweep catches it when there is something to see.
-    if seen.provisional:
+    # Provisional here is measured against how many subjects stand in frame,
+    # because an inspection with no line to test cannot count crossings. That is
+    # the wrong yardstick for a line claim and benched Bangkok's Sukhumvit Road
+    # at midday. Only a scene with almost nothing in it is skipped; the rest go
+    # on to be judged on what actually crosses.
+    from .qualify import MIN_SUBJECTS
+
+    if seen.subjects < MIN_SUBJECTS:
         return {"url": url, "usable": False, "reason": seen.reason}
 
     target = "person" if seen.counts == "people" else "anything"

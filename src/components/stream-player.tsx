@@ -10,6 +10,11 @@ export type StreamSource = { url: string; name: string };
 
 const maximumRetries = 3;
 
+// What the picture opens at. 3 Mbit covers 720p on these streams and is well
+// inside what a normal connection carries, so the first frames are watchable
+// and the player still climbs to 1080p from there.
+const openingBitrate = 3_000_000;
+
 export function StreamPlayer({
   marketId,
   label,
@@ -96,8 +101,35 @@ export function StreamPlayer({
           return;
         }
 
-        const hls = new Hls({ backBufferLength: 30, enableWorker: true, lowLatencyMode: true });
+        const hls = new Hls({
+          backBufferLength: 30,
+          enableWorker: true,
+          // These manifests list 144p first, and hls.js starts from a 500kbit
+          // guess, so the picture opened at 256x144 and crawled upwards for the
+          // best part of a minute. The proxy measures 13Mbit against the 5.5
+          // that 1080p asks for, so the first guess was wrong by twenty times.
+          abrEwmaDefaultEstimate: 8_000_000,
+          // Off: none of these are low latency HLS, and asking for it made the
+          // player chase a live edge the manifest does not publish.
+          lowLatencyMode: false,
+        });
         player = hls;
+
+        // Start partway up the ladder rather than at the bottom. Left to pick
+        // for itself the player opened at 256x144 and took forty seconds to
+        // reach 1080p, which is most of a market's opening minute spent looking
+        // like a webcam from 2004. Chosen by bitrate, not by index, because a
+        // stream with three renditions and one with eight do not number them
+        // the same.
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+          const affordable = data.levels
+            .map((level, index) => ({ index, bitrate: level.bitrate }))
+            .filter((level) => level.bitrate <= openingBitrate);
+          if (affordable.length > 0) {
+            hls.startLevel = affordable[affordable.length - 1].index;
+          }
+        });
+
         hls.loadSource(stream.url);
         hls.attachMedia(video);
         hls.on(Hls.Events.ERROR, (_, data) => {

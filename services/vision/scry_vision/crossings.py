@@ -35,6 +35,13 @@ ANYTHING = "anything"
 
 WIDTH, HEIGHT = 1280, 720
 
+# Frames per second of footage that are actually counted. Every observer counts
+# the same cadence whatever its hardware manages, which is what makes two of
+# them comparable at all. Eight is enough for ByteTrack to hold a road user
+# across the line at ordinary speeds.
+SAMPLE_FPS = 8.0
+SAMPLE_INTERVAL = 1.0 / SAMPLE_FPS
+
 
 def classes_for(target: str) -> list[int]:
     return sorted(COUNTABLE.values()) if target == ANYTHING else [COUNTABLE[target]]
@@ -123,8 +130,10 @@ class Crossings:
         deadline = started.timestamp() + seconds
         health = Health()
         frames = 0
+        sampled = 0
         seen = 0
         last_position: float | None = None
+        last_sampled: float | None = None
         chained = digest(f"{url}|{started.isoformat()}".encode())
         samples: list[dict] = []
         bucket_started = started
@@ -223,5 +232,5 @@ class Crossings:
             samples=samples,
             uptime=round(health.uptime(elapsed), 4),
             evidence_root=bundle(samples)[0],
-            detail={"frames": frames, "seen": seen, "model": model.version},
+            detail={"frames": frames, "sampled": sampled, "seen": seen, "model": model.version},
         )

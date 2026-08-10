@@ -100,7 +100,7 @@ export function Stage({
         <span className="flex items-center gap-3 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-sm">
           {/* A latency figure used to sit here. It was a function of the market
               id and a clock, not of the stream, and it moved convincingly. */}
-          <span className="text-[11px] text-white/50">{market.observers}/3</span>
+          <span className="text-[11px] text-white/50">{market.observers}/{market.observersRequired}</span>
           <button
             className="focus-ring -mr-1 grid size-6 place-items-center rounded-full text-white/50 transition-colors hover:text-white"
             type="button"
@@ -150,7 +150,7 @@ export function Stage({
           {activeSource ? `${activeSource.live ? "Live source" : "Fallback"}: ${activeSource.name}` : "Selecting a live source"}
           <br />
           {market.observers > 0
-            ? `${market.observers} of 3 observers reporting`
+            ? `${market.observers} of ${market.observersRequired} observers reporting`
             : "Waiting on an observer to report"}
         </p>
       )}

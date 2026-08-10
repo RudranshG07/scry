@@ -33,6 +33,7 @@ export type Market = {
   currentRate: number;
   baseline: number;
   observers: number;
+  observersRequired: number;
   chainId: number;
   contractAddress?: `0x${string}`;
   opensAt: string;

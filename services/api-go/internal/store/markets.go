@@ -54,6 +54,7 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 	m.ObservationEndsAt = stamp(ends)
 	m.ResolvedAt = stampOrNil(challenge)
 	m.Unit = domain.UnitFor(m.Category)
+	m.ObserversRequired = domain.ObserversRequired
 	m.CurrentRate = round(m.CurrentRate, 1)
 	m.Baseline = round(m.Baseline, 1)
 	return m, nil

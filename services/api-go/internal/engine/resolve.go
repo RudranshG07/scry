@@ -9,13 +9,23 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
 const (
-	// Two of three observers must land on the same number for a result to stand.
-	minObservers = 2
+	// Observers must land on the same number for a result to stand.
+	minObservers = domain.ObserversRequired
 	// Proportional: a fixed margin is too tight at 200 and too loose at 5.
-	tolerancePercent = 0.05
+	//
+	// Measured, not chosen. At 0.05 no market settled in ten days: two different
+	// detectors on identical footage — same frames, same sampling — reported 35
+	// and 30 crossings, and 42 and 53 before frame sampling was fixed. The gap
+	// is the detectors themselves, since a bigger model finds more distant
+	// vehicles and every one it finds may cross the line. Two copies of one
+	// model agree exactly, which is why the quorum asks for two different ones
+	// and has to tolerate what that costs.
+	tolerancePercent = 0.20
 	toleranceFloor   = 2
 	// How long anyone has to challenge a proposed result.
 	challengeWindow = 10 * time.Minute
