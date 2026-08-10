@@ -110,6 +110,10 @@ def as_report(reading, seconds: float) -> dict:
         "elapsed": seconds,
         "modelVersion": reading.detail.get("model", "unknown"),
         "evidenceRoot": reading.evidence_root,
+        # What the camera was looking at. The API refuses a count taken on a
+        # scene the stream was not qualified on, which both observers would
+        # otherwise agree about perfectly.
+        "sceneHash": reading.detail.get("sceneHash", ""),
         "counts": reading.samples,
     }
 

@@ -21,6 +21,7 @@ from .detector import MODELS, _load
 from .evidence import bundle, chain, digest, stamp
 from .health import Health
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
+from .scene import fingerprint
 
 # COCO classes worth counting on a road or a pavement.
 COUNTABLE = {
@@ -134,6 +135,7 @@ class Crossings:
         seen = 0
         last_position: float | None = None
         last_sampled: float | None = None
+        scene_hash: str | None = None
         chained = digest(f"{url}|{started.isoformat()}".encode())
         samples: list[dict] = []
         bucket_started = started
@@ -167,6 +169,11 @@ class Crossings:
                 last_sampled = position
 
             sampled += 1
+            # Taken from the middle of the window rather than the first frame,
+            # which on a stream that has just been opened is as likely to be a
+            # keyframe of an advert as of the road.
+            if scene_hash is None and sampled > 30:
+                scene_hash = fingerprint(frame)
             chained = chain(chained, frame.tobytes())
 
             # Native frame, not a downscaled one: resizing before inference cost
@@ -232,5 +239,6 @@ class Crossings:
             samples=samples,
             uptime=round(health.uptime(elapsed), 4),
             evidence_root=bundle(samples)[0],
-            detail={"frames": frames, "sampled": sampled, "seen": seen, "model": model.version},
+            detail={"frames": frames, "sampled": sampled, "seen": seen,
+                    "sceneHash": scene_hash or "", "model": model.version},
         )

@@ -77,3 +77,56 @@ class ThresholdTest(unittest.TestCase):
         # Zero, so the store leaves whatever threshold was already there rather
         # than setting the market to "more than nothing".
         self.assertEqual(threshold, 1)
+
+
+class SceneTest(unittest.TestCase):
+    """A count line is drawn on a scene, so the scene has to still be there.
+
+    This is the one fault the quorum cannot catch: when a feed cuts to another
+    camera both observers see the identical wrong view and agree perfectly.
+    """
+
+    def _road(self):
+        import cv2
+        import numpy as np
+        frame = np.zeros((720, 1280, 3), np.uint8)
+        frame[:300] = (120, 110, 100)
+        frame[300:] = (60, 60, 62)
+        cv2.rectangle(frame, (0, 300), (1280, 320), (200, 200, 200), -1)
+        for x in range(0, 1280, 160):
+            cv2.rectangle(frame, (x, 500), (x + 80, 510), (230, 230, 230), -1)
+        cv2.rectangle(frame, (80, 120), (300, 300), (90, 80, 75), -1)
+        return frame
+
+    def test_traffic_moving_through_is_the_same_scene(self):
+        import cv2
+        import numpy as np
+        from scry_vision.scene import fingerprint, same_scene
+
+        base = self._road()
+        busy = base.copy()
+        for x, y in ((400, 560), (700, 600), (1000, 540)):
+            cv2.rectangle(busy, (x, y), (x + 90, y + 45), (30, 30, 140), -1)
+        self.assertTrue(same_scene(fingerprint(base), fingerprint(busy)))
+
+    def test_nightfall_is_the_same_scene(self):
+        import numpy as np
+        from scry_vision.scene import fingerprint, same_scene
+
+        base = self._road()
+        night = np.clip(base.astype(np.int16) - 55, 0, 255).astype(np.uint8)
+        self.assertTrue(same_scene(fingerprint(base), fingerprint(night)))
+
+    def test_the_camera_moving_is_not(self):
+        import numpy as np
+        from scry_vision.scene import fingerprint, same_scene
+
+        base = self._road()
+        panned = np.roll(base, 260, axis=1)
+        self.assertFalse(same_scene(fingerprint(base), fingerprint(panned)))
+
+    def test_a_missing_fingerprint_never_matches(self):
+        from scry_vision.scene import drift, same_scene
+
+        self.assertEqual(drift("", "95689182cb4fbc3b"), 64)
+        self.assertFalse(same_scene("", "95689182cb4fbc3b"))

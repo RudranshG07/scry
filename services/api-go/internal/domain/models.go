@@ -176,20 +176,23 @@ type Notification struct {
 // ObserverReport is one observer's answer for a market, submitted over the
 // network. Observers are meant to be independent, so the API is the only way in.
 type ObserverReport struct {
-	MarketID       string        `json:"marketId"`
-	ObserverID     string        `json:"observerId"`
-	Role           string        `json:"role"`
-	ObservedValue  int64         `json:"observedValue"`
-	Confidence     float64       `json:"confidence"`
-	ModelVersion   string        `json:"modelVersion"`
-	Uptime         float64       `json:"uptime"`
-	DriftMS        float64       `json:"maximumTimestampDriftMs"`
-	Visibility     float64       `json:"averageVisibility"`
-	FrozenSeconds  float64       `json:"longestFrozenSeconds"`
-	InvalidReasons []string      `json:"invalidReasons"`
-	Signature      *string       `json:"signature,omitempty"`
-	EvidenceRoot   *string       `json:"evidenceRoot,omitempty"`
-	Counts         []CountSample `json:"counts,omitempty"`
+	MarketID       string   `json:"marketId"`
+	ObserverID     string   `json:"observerId"`
+	Role           string   `json:"role"`
+	ObservedValue  int64    `json:"observedValue"`
+	Confidence     float64  `json:"confidence"`
+	ModelVersion   string   `json:"modelVersion"`
+	Uptime         float64  `json:"uptime"`
+	DriftMS        float64  `json:"maximumTimestampDriftMs"`
+	Visibility     float64  `json:"averageVisibility"`
+	FrozenSeconds  float64  `json:"longestFrozenSeconds"`
+	InvalidReasons []string `json:"invalidReasons"`
+	Signature      *string  `json:"signature,omitempty"`
+	EvidenceRoot   *string  `json:"evidenceRoot,omitempty"`
+	// What the camera was looking at while counting, so a count taken after the
+	// view changed can be told from one taken on the scene that qualified.
+	SceneHash string        `json:"sceneHash,omitempty"`
+	Counts    []CountSample `json:"counts,omitempty"`
 }
 
 // EvidenceSample is one counting interval with the siblings needed to check it

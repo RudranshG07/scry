@@ -18,13 +18,23 @@ import statistics
 import sys
 from dataclasses import asdict, dataclass
 
-MIN_REALTIME = 3.0
+# Segments have to arrive faster than they play or the observer falls behind and
+# the tail of the window is never seen. 1.5 leaves half again for jitter. At 3.0
+# this bar rejected a camera two observers had just counted 161 crossings on,
+# for the crime of delivering at 2.6 — the Caltrans feed that started all this
+# managed 0.6 and is still refused decisively.
+MIN_REALTIME = 1.5
 MIN_SUBJECTS = 3.0
 # One subject either way has to move the count by less than the resolver's 5%
 # bar, so 25 rather than 20: at exactly 20 a single subject is 5.0%, right on
 # the line. Abbey Road at six people put one pedestrian at 17%.
 MIN_FOR_PERCENT = 25.0
 MAX_DISAGREEMENT = 0.20
+
+# A live playlist opens on the second or third try often enough that one failure
+# is no evidence at all about the camera.
+OPEN_ATTEMPTS = 3
+OPEN_BACKOFF = 3.0
 
 
 @dataclass
@@ -38,6 +48,9 @@ class Verdict:
     disagreement: float = 0.0
     realtime: float = 0.0
     provisional: bool = False
+    # The view this verdict was reached on. A market counted on a different
+    # scene is not the market that was qualified.
+    scene: str = ""
     # What a market on this stream should be set at. Left unset the scheduler
     # falls back to a flat 180 for every camera, so a road that passes a hundred
     # a window settles "no" every single time and the market is decided before
@@ -83,15 +96,35 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
                      Occupancy(role="verification", unit="vehicles")),
     }
 
-    capture = cv2.VideoCapture(playlist)
-    if not capture.isOpened():
-        return Verdict(url, False, "the stream would not open")
+    # Retried, because opening a live playlist fails transiently — a segment
+    # boundary, a busy CDN, another reader already on the socket. One flaky
+    # open used to suspend the camera, and suspension lasts two hours: Bangkok
+    # was condemned while yt-dlp could still see it live.
+    capture = None
+    for attempt in range(OPEN_ATTEMPTS):
+        capture = cv2.VideoCapture(playlist)
+        if capture.isOpened():
+            break
+        capture.release()
+        capture = None
+        if attempt + 1 < OPEN_ATTEMPTS:
+            time.sleep(OPEN_BACKOFF)
+            playlist = resolve(url) or playlist
+    if capture is None:
+        return Verdict(url, False, f"the stream would not open in {OPEN_ATTEMPTS} attempts")
+
+    from .scene import fingerprint
 
     started = time.monotonic()
+    scene_hash = ""
+    seen_frames = 0
     while time.monotonic() - started < seconds:
         ok, frame = capture.read()
         if not ok:
             continue
+        seen_frames += 1
+        if not scene_hash and seen_frames > 30:
+            scene_hash = fingerprint(frame)
         for primary, verify in watchers.values():
             primary.feed(frame)
             verify.feed(frame)
@@ -123,7 +156,7 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
 
     provisional, note, threshold = _too_quiet(playlist, claim, primary_avg, seconds, window)
     return Verdict(
-        url, True, note, threshold=threshold,
+        url, True, note, threshold=threshold, scene=scene_hash,
         counts=unit, subjects=round(primary_avg, 1), peak=peak,
         disagreement=round(disagreement, 3), realtime=net["realtime_factor"],
         provisional=provisional,

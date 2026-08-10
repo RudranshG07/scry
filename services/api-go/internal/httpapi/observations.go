@@ -26,7 +26,7 @@ var (
 		"insufficient_observers", "observer_divergence", "uptime_below_minimum",
 		"timestamp_drift", "visibility_below_minimum", "stream_frozen",
 		"evidence_unavailable", "manipulation_suspected", "outcome_unresolved",
-		"observer_set_invalid",
+		"observer_set_invalid", "scene_changed",
 	}
 )
 
@@ -60,6 +60,19 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 	if problem := validate(&report); problem != "" {
 		writeError(writer, http.StatusUnprocessableEntity, "invalid_report", problem)
 		return
+	}
+
+	// A count taken after the camera moved is not the count this market asked
+	// for, however confidently the observers agree on it.
+	if scenes, ok := server.store.(QualifiedScenes); ok {
+		if qualified, err := scenes.SceneForMarket(request.Context(), report.MarketID); err == nil {
+			if sceneChanged(qualified, report.SceneHash) {
+				report.InvalidReasons = append(report.InvalidReasons, "scene_changed")
+				server.log.Warn("report counted a different scene",
+					"market", report.MarketID, "observer", report.ObserverID,
+					"drift", sceneDrift(qualified, report.SceneHash))
+			}
+		}
 	}
 
 	err := ingester.SaveReport(request.Context(), report)

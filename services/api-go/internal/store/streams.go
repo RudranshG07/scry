@@ -102,6 +102,20 @@ func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error)
 	return out, rows.Err()
 }
 
+// SceneForMarket is the view the market's stream was qualified on, or empty if
+// it was qualified before fingerprints were recorded.
+func (s *Postgres) SceneForMarket(ctx context.Context, marketID string) (string, error) {
+	var scene string
+	err := s.pool.QueryRow(ctx, `
+		SELECT coalesce(st.qualification->>'scene', '')
+		FROM markets m JOIN streams st ON st.id = m.stream_id
+		WHERE m.id = $1`, marketID).Scan(&scene)
+	if err != nil {
+		return "", fmt.Errorf("read qualified scene: %w", err)
+	}
+	return scene, nil
+}
+
 // PendingQualification lists streams due another look. A link that qualified on
 // submission can be offline, re-aimed or dark a week later, and a market on one
 // can only ever void.

@@ -15,7 +15,9 @@ import threading
 import urllib.parse
 import urllib.request
 
-MIN_REALTIME_FACTOR = 3.0
+# Matches the qualification gate: an observer needs footage faster than it
+# plays, not three times faster.
+MIN_REALTIME_FACTOR = 1.5
 MIN_FPS = 10.0
 
 
