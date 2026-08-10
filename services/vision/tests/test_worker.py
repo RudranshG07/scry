@@ -7,8 +7,8 @@ from scry_vision.probe import verdict
 from scry_vision.scenes import scene_for
 from scry_vision.calibrate import TOLERANCE_FLOOR, TOLERANCE_PERCENT, agrees, allowed_spread, spread, summarise
 from scry_vision.claims import Reading
-from scry_vision.worker import (JOIN_GRACE, StreamMismatch, as_report, at, guard, live_camera,
-                                pick, slot)
+from scry_vision.worker import (JOIN_GRACE, SETTLED_REFUSALS, StreamMismatch, as_report, at,
+                                guard, live_camera, pick, slot)
 
 
 def market(id_, stream, status="Observing"):
@@ -488,3 +488,26 @@ class CameraTest(unittest.TestCase):
 
     def test_nothing_to_watch_reports_nothing_rather_than_guessing(self):
         self.assertIsNone(live_camera("stream-x", None, None))
+
+
+class SubmissionTest(unittest.TestCase):
+    """A window the API has closed is not counted a second time.
+
+    Only 202 used to finish a market, so a report that arrived late was refused
+    with 409 and the observer counted the whole window again — fifteen minutes,
+    which is exactly the next window. One late report invalidated every market
+    after it.
+    """
+
+    def test_a_closed_window_is_not_retried(self):
+        self.assertIn(409, SETTLED_REFUSALS)
+
+    def test_a_market_that_is_gone_is_not_retried(self):
+        self.assertIn(404, SETTLED_REFUSALS)
+
+    def test_a_server_fault_is_still_worth_retrying(self):
+        for status in (500, 502, 503, 504):
+            self.assertNotIn(status, SETTLED_REFUSALS)
+
+    def test_success_is_not_in_the_refusal_set(self):
+        self.assertNotIn(202, SETTLED_REFUSALS)

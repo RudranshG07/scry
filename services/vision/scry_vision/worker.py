@@ -16,6 +16,11 @@ class StreamMismatch(Exception):
 
 JOIN_GRACE = 20
 
+# Statuses that mean this window is over as far as the API is concerned: the
+# observation closed (409), the market is gone (404), or the report was rejected
+# on its own terms (422). None of them change if the same count is sent again.
+SETTLED_REFUSALS = frozenset({404, 409, 422})
+
 
 def get(url: str) -> object:
     with urllib.request.urlopen(url, timeout=15) as response:
@@ -190,7 +195,12 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
 
         status, body = submit(api, market["id"], observer, role, result)
         print(f"  submitted -> {status} {body}", flush=True)
-        if status == 202:
+
+        # A refusal the market itself will never take back is finished with, not
+        # worth retrying. Counting a whole window again to be told the same thing
+        # costs fifteen minutes, which is the next window: one late report used
+        # to invalidate every market after it.
+        if status == 202 or status in SETTLED_REFUSALS:
             done.add(market["id"])
 
         if market_id:
