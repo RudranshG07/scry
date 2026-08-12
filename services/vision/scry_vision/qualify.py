@@ -29,7 +29,13 @@ MIN_SUBJECTS = 3.0
 # bar, so 25 rather than 20: at exactly 20 a single subject is 5.0%, right on
 # the line. Abbey Road at six people put one pedestrian at 17%.
 MIN_FOR_PERCENT = 25.0
-MAX_DISAGREEMENT = 0.20
+# Measured, like the settlement tolerance. The two detector profiles differ by
+# about 15% per frame on identical footage — the smaller model simply finds
+# fewer distant subjects — and occupancy is a per-frame average, so it carries
+# that difference plus frame-to-frame noise. At 0.20 this gate rejected a road
+# that two observers had counted 161 crossings on. A scene nobody can read still
+# fails it: the worst measured here were 40% and 55%.
+MAX_DISAGREEMENT = 0.30
 
 # A live playlist opens on the second or third try often enough that one failure
 # is no evidence at all about the camera.
@@ -75,7 +81,16 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
     if not playlist:
         return Verdict(url, False, "could not find a live stream at that link")
 
+    # Measured twice when the first look is poor. Three segments is a small
+    # sample of a variable network: Shibuya came back at 0.8 and 2.2 minutes
+    # apart, and the low reading alone would have suspended a camera the counter
+    # had just found twenty-three crossings on.
     net = throughput(playlist)
+    if net.get("ok") and net["realtime_factor"] < MIN_REALTIME:
+        again = throughput(playlist)
+        if again.get("ok") and again["realtime_factor"] > net["realtime_factor"]:
+            net = again
+
     if not net.get("ok"):
         return Verdict(url, False, net.get("reason", "unreachable"))
     if net["realtime_factor"] < MIN_REALTIME:

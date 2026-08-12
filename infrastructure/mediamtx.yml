@@ -8,7 +8,11 @@ hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsAllowOrigin: "*"
 
-rtsp: no
+# Enabled for the ingest process only, which publishes to 127.0.0.1 inside the
+# container. Nothing outside reaches it: compose maps the HLS and API ports and
+# not this one.
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
 rtmp: no
 webrtc: yes
 webrtcAddress: :8889
@@ -48,11 +52,16 @@ pathDefaults:
   sourceOnDemandCloseAfter: 60s
 
 paths:
-  stream-sd-5-28th:
-    source: https://wzmedia.dot.ca.gov/D11/C023_SB_5_JNO_28th_St.stream/playlist.m3u8
-
-  stream-sd-8-taylor:
-    source: https://wzmedia.dot.ca.gov/D11/C006_EB_8_JEO_Taylor.stream/playlist.m3u8
-
-  stream-sd-8-15:
-    source: https://wzmedia.dot.ca.gov/D11/C057_WB_8_JEO_Rte_15.stream/playlist.m3u8
+  # One rule for every camera. The path name is the stream id, and the ingest
+  # script asks the API what that stream's source is, so a link submitted an
+  # hour ago is relayed without anyone editing this file. Cameras rotate — half
+  # of the first four died within a day — and a config listing them by hand goes
+  # stale faster than anyone will maintain it.
+  "~^stream-[a-z0-9-]+$":
+    runOnDemand: /usr/local/bin/ingest $MTX_PATH
+    runOnDemandRestart: yes
+    # Long enough to cover the gap between one observation window closing and
+    # the next opening, so the pull is warm when counting starts rather than
+    # reconnecting during the seconds that matter most.
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 5m

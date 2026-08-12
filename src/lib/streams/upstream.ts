@@ -13,6 +13,18 @@ export function isManifest(url: string) {
   return /\.m3u8(?:$|[?#])/i.test(url);
 }
 
+/**
+ * How yt-dlp should identify itself, if it has been told. YouTube starts
+ * answering "Sign in to confirm you are not a bot" once it has seen enough
+ * automated resolutions from one address, and then every stream stops resolving
+ * at once. SCRY_YTDLP_COOKIES takes a browser name or a path to a cookies file.
+ */
+function credentials() {
+  const setting = process.env.SCRY_YTDLP_COOKIES?.trim();
+  if (!setting) return [];
+  return setting.includes("/") ? ["--cookies", setting] : ["--cookies-from-browser", setting];
+}
+
 function run(command: string, args: string[]) {
   return new Promise<string | null>((resolve) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
@@ -41,7 +53,7 @@ function run(command: string, args: string[]) {
  * the connection can hold.
  */
 async function viaYtDlp(source: string): Promise<string | null> {
-  const probed = await run("yt-dlp", ["-J", "--no-warnings", "--no-playlist", source]);
+  const probed = await run("yt-dlp", [...credentials(), "-J", "--no-warnings", "--no-playlist", source]);
   if (probed) {
     try {
       const payload = JSON.parse(probed) as { manifest_url?: string; formats?: Array<{ manifest_url?: string }> };
@@ -52,7 +64,7 @@ async function viaYtDlp(source: string): Promise<string | null> {
     }
   }
 
-  const direct = await run("yt-dlp", ["-g", "-f", "best[protocol^=m3u8]/best", "--no-warnings", source]);
+  const direct = await run("yt-dlp", [...credentials(), "-g", "-f", "best[protocol^=m3u8]/best", "--no-warnings", source]);
   return direct?.split("\n").find((line) => line.startsWith("http")) ?? null;
 }
 

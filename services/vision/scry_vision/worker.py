@@ -16,6 +16,10 @@ class StreamMismatch(Exception):
 
 JOIN_GRACE = 20
 
+# How long before a window opens the observer resolves its playlist, so the
+# seconds that matter are spent counting rather than talking to yt-dlp.
+WARM_UP = 90
+
 # Statuses that mean this window is over as far as the API is concerned: the
 # observation closed (409), the market is gone (404), or the report was rejected
 # on its own terms (422). None of them change if the same count is sent again.
@@ -136,6 +140,8 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
 
     print(f"watching {stream} as {role}", flush=True)
     done: set[str] = set()
+    warmed: str | None = None
+    ready: str | None = None
 
     while True:
         try:
@@ -161,10 +167,26 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
         now = datetime.now(UTC)
         if now < opens:
             waiting = (opens - now).total_seconds()
+            # Get ready before the window rather than at it. Resolving a signed
+            # playlist takes tens of seconds under load, and doing it after the
+            # window opened put the observer 77s past a 20s grace on a stream it
+            # had been sitting in position for.
+            if waiting < WARM_UP and warmed != market["id"]:
+                warmed = market["id"]
+                ready = live_camera(stream, source, relay) if (source or relay) else camera
+                print(f"resolved a playlist for {market['id']} ahead of its window", flush=True)
             print(f"in position for {market['id']} ({market['status']}), "
                   f"counting starts in {waiting:.0f}s", flush=True)
-            time.sleep(min(poll, waiting))
-            continue
+            if waiting > poll:
+                time.sleep(poll)
+                continue
+            # Inside the last poll, wait out the remainder and start counting
+            # without going round again. Re-reading the market list at the
+            # boundary means a stalled call costs the whole window: this
+            # observer sat in position, said "89s to go", and arrived 229s late
+            # for a grace of twenty.
+            time.sleep(max(0.0, waiting))
+            now = datetime.now(UTC)
 
         # A partial count answers a whole-window question wrongly, so it voids.
         if now > opens + timedelta(seconds=JOIN_GRACE):
@@ -178,8 +200,8 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
         # and the observer went on watching the dead url: frames stopped
         # arriving, every report came back with a count of zero and no uptime,
         # and every market it touched invalidated with nothing saying why.
-        watching = camera
-        if source or relay:
+        watching = ready if warmed == market["id"] and ready else camera
+        if watching is camera and (source or relay):
             watching = live_camera(stream, source, relay) or camera
 
         left = (closes - now).total_seconds()

@@ -46,6 +46,30 @@ func observable(c domain.Claim) bool {
 	}
 }
 
+// What the market is counting, in words, taken from the claim rather than from
+// the stream's category. Shibuya was submitted as Traffic when vehicles happened
+// to dominate the first look, then counted "anything", and asked about
+// "vehicles" over a pedestrian crossing.
+var counted = map[string]string{
+	"person":     "people",
+	"bicycle":    "bicycles",
+	"car":        "cars",
+	"motorcycle": "motorcycles",
+	"bus":        "buses",
+	"truck":      "lorries",
+}
+
+func nounFor(c domain.Claim, unit string) string {
+	if word, ok := counted[c.Target]; ok {
+		return word
+	}
+	if c.Target == "anything" {
+		// Whatever crosses counts, so the question must not name one kind of it.
+		return "things"
+	}
+	return unit
+}
+
 func questionFor(c domain.Claim, threshold int64, unit string) string {
 	switch c.Kind {
 	case "phrase":
@@ -56,7 +80,7 @@ func questionFor(c domain.Claim, threshold int64, unit string) string {
 			threshold, c.Target)
 	default:
 		return fmt.Sprintf("Will more than %d %s cross the count line during the observation window?",
-			threshold, unit)
+			threshold, nounFor(c, unit))
 	}
 }
 

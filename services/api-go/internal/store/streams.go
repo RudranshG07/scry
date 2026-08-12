@@ -173,6 +173,12 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 	if v.Threshold > 0 {
 		fields["threshold"] = v.Threshold
 	}
+	// Only when one was taken. An inspection that never got a frame reports an
+	// empty fingerprint, and storing that would void every later market for
+	// counting a scene nobody recorded.
+	if v.Scene != "" {
+		fields["scene"] = v.Scene
+	}
 
 	note, err := json.Marshal(fields)
 	if err != nil {

@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -21,17 +24,91 @@ MIN_REALTIME_FACTOR = 1.5
 MIN_FPS = 10.0
 
 
+def _credentials() -> list[str]:
+    """How yt-dlp should identify itself, if it has been told.
+
+    YouTube starts answering "Sign in to confirm you are not a bot" once it has
+    seen enough automated resolutions from one address, and then every stream
+    fails to resolve at once with nothing wrong with any of them. Cookies from a
+    signed-in browser lift it.
+
+    SCRY_YTDLP_COOKIES takes either a browser name (chrome, firefox, safari) or
+    a path to a cookies.txt.
+    """
+    setting = os.environ.get("SCRY_YTDLP_COOKIES", "").strip()
+    if not setting:
+        return []
+    if os.path.exists(setting):
+        return ["--cookies", setting]
+    return ["--cookies-from-browser", setting]
+
+
 def _ytdlp(args: list[str]) -> str | None:
     try:
-        out = subprocess.run(["yt-dlp", "--no-update", *args],
+        out = subprocess.run(["yt-dlp", "--no-update", *_credentials(), *args],
                              capture_output=True, text=True, timeout=90)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return out.stdout if out.returncode == 0 else None
+    if out.returncode != 0:
+        # Worth saying out loud: this failure looks identical to a dead camera
+        # from the outside, and it suspends every stream at once.
+        if "not a bot" in (out.stderr or ""):
+            print("yt-dlp is being asked to sign in; set SCRY_YTDLP_COOKIES",
+                  file=sys.stderr, flush=True)
+        return None
+    return out.stdout
+
+
+# What a counting pass wants out of the ladder.
+#
+# Matched to the detector's input rather than to the best rendition on offer.
+# YOLO runs at imgsz 640 and letterboxes whatever it is given, so a 720p frame
+# is scaled down before it is ever looked at: those bytes buy nothing and cost
+# throughput. Shibuya at 720 measured between 0.8 and 2.2 of realtime on this
+# connection and was suspended for it; at 480 it measured 4.0.
+COUNTING_HEIGHT = 640
+
+
+def media_playlist(master: str, height: int = COUNTING_HEIGHT) -> str | None:
+    """One rendition out of a master playlist.
+
+    OpenCV cannot open a master: ffmpeg reads the variant list, finds no media,
+    and returns nothing. The browser wants the master so it can change bitrate
+    mid-stream; an observer wants one rendition and to stay on it.
+    """
+    try:
+        body = _fetch(master)
+    except Exception:
+        return None
+    if "#EXT-X-STREAM-INF" not in body:
+        return master
+
+    lines = [line.strip() for line in body.splitlines()]
+    best: tuple[int, str] | None = None
+    for index, line in enumerate(lines):
+        if not line.startswith("#EXT-X-STREAM-INF") or index + 1 >= len(lines):
+            continue
+        target = lines[index + 1]
+        if not target or target.startswith("#"):
+            continue
+        found = re.search(r"RESOLUTION=\d+x(\d+)", line)
+        tall = int(found.group(1)) if found else 0
+        if tall > height:
+            continue
+        if best is None or tall > best[0]:
+            best = (tall, urllib.parse.urljoin(master, target))
+
+    if best:
+        return best[1]
+    # Every rendition is taller than asked for, so take the smallest of them.
+    for index, line in enumerate(lines):
+        if line.startswith("#EXT-X-STREAM-INF") and index + 1 < len(lines):
+            return urllib.parse.urljoin(master, lines[index + 1])
+    return None
 
 
 def resolve(source: str) -> str | None:
-    """Watch page to playlist url. Signed and expiring, so resolved at use.
+    """Watch page to a playlist an observer can open.
 
     The variant manifest is asked for by name rather than taking whatever `-g`
     ranks best. On some streams that is a progressive mp4, and everything
@@ -40,7 +117,7 @@ def resolve(source: str) -> str | None:
     parsed as a list of segments.
     """
     if source.startswith("http") and ".m3u8" in source:
-        return source
+        return media_playlist(source) or source
 
     probed = _ytdlp(["-J", "--no-warnings", "--no-playlist", source])
     if probed:
@@ -50,7 +127,7 @@ def resolve(source: str) -> str | None:
                 (f["manifest_url"] for f in payload.get("formats") or [] if f.get("manifest_url")),
                 None)
             if master:
-                return master
+                return media_playlist(master) or master
         except (json.JSONDecodeError, KeyError):
             pass
 
@@ -61,9 +138,35 @@ def resolve(source: str) -> str | None:
     return None
 
 
+# A CDN that has seen a lot of us lately resets connections rather than
+# refusing them, and one reset used to condemn the camera for two hours.
+SEGMENT_SAMPLE = 6
+FETCH_ATTEMPTS = 3
+FETCH_BACKOFF = 2.0
+
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36")
+
+
+def _get(url: str, timeout: float = 20.0) -> bytes:
+    """One request, retried through the resets these CDNs hand out."""
+    import time
+
+    last: Exception | None = None
+    for attempt in range(FETCH_ATTEMPTS):
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except (ConnectionResetError, TimeoutError, urllib.error.URLError, OSError) as error:
+            last = error
+            if attempt + 1 < FETCH_ATTEMPTS:
+                time.sleep(FETCH_BACKOFF * (attempt + 1))
+    raise last if last else OSError("fetch failed")
+
+
 def _fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=20) as response:
-        return response.read().decode("utf-8", "replace")
+    return _get(url).decode("utf-8", "replace")
 
 
 def throughput(playlist: str) -> dict:
@@ -82,7 +185,12 @@ def throughput(playlist: str) -> dict:
     # and measuring it directly reports zero seconds of video and suspends a
     # perfectly good camera. Descend to the lowest rendition, which is the one a
     # thin connection would end up on anyway.
-    if entries and ".m3u8" in entries[-1]:
+    #
+    # Decided by what the body says, not by what the url looks like. YouTube's
+    # segments are served from paths containing "/index.m3u8/", so matching on
+    # the extension fetched a segment, read the mp4 header as a list of
+    # segments, and reported the camera dead over a url full of nul bytes.
+    if "#EXT-X-STREAM-INF" in body and entries:
         playlist = urllib.parse.urljoin(playlist, entries[-1])
         try:
             body = _fetch(playlist)
@@ -99,17 +207,20 @@ def throughput(playlist: str) -> dict:
     base = playlist.rsplit("/", 1)[0]
     downloaded = 0.0
     total_bytes = 0
-    for name in segments[:3]:
+    # Six rather than three. The same stream measured 0.8, 1.3, 1.4, 2.2 and 4.0
+    # across consecutive three-segment samples, which is not a camera changing —
+    # it is too small a sample of a network that varies. A verdict that suspends
+    # a stream for two hours should not turn on that much noise.
+    for name in segments[:SEGMENT_SAMPLE]:
         url = name if name.startswith("http") else f"{base}/{name}"
         started = time.monotonic()
         try:
-            with urllib.request.urlopen(url, timeout=30) as response:
-                total_bytes += len(response.read())
+            total_bytes += len(_get(url, timeout=30))
         except Exception as error:
             return {"ok": False, "reason": f"segment failed: {error}"}
         downloaded += time.monotonic() - started
 
-    covered = seconds * (min(3, len(segments)) / len(segments))
+    covered = seconds * (min(SEGMENT_SAMPLE, len(segments)) / len(segments))
     return {
         "ok": True,
         "seconds_of_video": round(covered, 1),

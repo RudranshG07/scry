@@ -92,6 +92,9 @@ type Qualification struct {
 	// What a market on this stream should be set at, measured from what the
 	// camera actually passes in a window.
 	Threshold int `json:"threshold"`
+	// The view this verdict was reached on, so a later count taken after the
+	// camera moved can be told apart from one taken on the scene that qualified.
+	Scene string `json:"scene"`
 }
 
 type Observer struct {

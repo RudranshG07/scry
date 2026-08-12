@@ -232,9 +232,15 @@ func TestQuestionMatchesWhatIsBeingCounted(t *testing.T) {
 		t.Errorf("a phrase market has no count line to cross, got %q", spoken)
 	}
 
+	// "anything" counts whatever crosses, so the question must not name one kind
+	// of it — this asked about vehicles over a pedestrian crossing.
 	crossed := questionFor(domain.Claim{Kind: "crossings", Target: "anything"}, 180, "vehicles")
-	if !strings.Contains(crossed, "180 vehicles cross the count line") {
+	if !strings.Contains(crossed, "180 things cross the count line") {
 		t.Errorf("unexpected crossings question %q", crossed)
+	}
+	people := questionFor(domain.Claim{Kind: "crossings", Target: "person"}, 240, "vehicles")
+	if !strings.Contains(people, "240 people cross the count line") {
+		t.Errorf("a claim on people asked about something else: %q", people)
 	}
 }
 
@@ -260,5 +266,26 @@ func TestWatchableMeansASourceNotARelayPath(t *testing.T) {
 	}
 	if !strings.Contains(string(schedule), "btrim(s.source_url)") {
 		t.Error("scheduling no longer checks for a source at all")
+	}
+}
+
+func TestTheQuestionNamesWhatIsActuallyCounted(t *testing.T) {
+	cases := []struct {
+		target, unit, want string
+	}{
+		// Counting everything must not claim to count one kind of thing: this
+		// market asked about "vehicles" over a pedestrian crossing.
+		{"anything", "vehicles", "things"},
+		{"person", "vehicles", "people"},
+		{"car", "people", "cars"},
+		{"bicycle", "events", "bicycles"},
+		// Nothing known about the target, so the stream's own unit stands.
+		{"", "vehicles", "vehicles"},
+	}
+	for _, c := range cases {
+		got := nounFor(domain.Claim{Kind: "crossings", Target: c.target}, c.unit)
+		if got != c.want {
+			t.Errorf("target %q with unit %q gave %q, want %q", c.target, c.unit, got, c.want)
+		}
 	}
 }

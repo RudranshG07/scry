@@ -511,3 +511,106 @@ class SubmissionTest(unittest.TestCase):
 
     def test_success_is_not_in_the_refusal_set(self):
         self.assertNotIn(202, SETTLED_REFUSALS)
+
+
+class PlaylistTest(unittest.TestCase):
+    """An observer is handed one rendition, not the ladder.
+
+    OpenCV cannot open a master playlist: ffmpeg reads the variant list, finds
+    no media and returns nothing. The browser wants the master so it can change
+    bitrate mid-stream, and pointing both at the same url broke every observer
+    while the video on screen looked fine.
+    """
+
+    MASTER = "\n".join([
+        "#EXTM3U",
+        "#EXT-X-STREAM-INF:BANDWIDTH=290288,RESOLUTION=256x144",
+        "https://cdn.example.com/144/index.m3u8",
+        "#EXT-X-STREAM-INF:BANDWIDTH=2922155,RESOLUTION=1280x720",
+        "https://cdn.example.com/720/index.m3u8",
+        "#EXT-X-STREAM-INF:BANDWIDTH=5552610,RESOLUTION=1920x1080",
+        "https://cdn.example.com/1080/index.m3u8",
+    ])
+
+    def test_the_best_rendition_within_the_ceiling_is_chosen(self):
+        from scry_vision.probe import media_playlist
+
+        with mock.patch("scry_vision.probe._fetch", return_value=self.MASTER):
+            self.assertEqual(media_playlist("https://cdn.example.com/master.m3u8", 720),
+                             "https://cdn.example.com/720/index.m3u8")
+
+    def test_pixels_are_not_thrown_away_by_taking_the_smallest(self):
+        from scry_vision.probe import media_playlist
+
+        with mock.patch("scry_vision.probe._fetch", return_value=self.MASTER):
+            got = media_playlist("https://cdn.example.com/master.m3u8", 1080)
+        self.assertEqual(got, "https://cdn.example.com/1080/index.m3u8")
+
+    def test_a_ladder_that_starts_above_the_ceiling_still_yields_something(self):
+        from scry_vision.probe import media_playlist
+
+        with mock.patch("scry_vision.probe._fetch", return_value=self.MASTER):
+            self.assertIsNotNone(media_playlist("https://cdn.example.com/master.m3u8", 100))
+
+    def test_a_media_playlist_is_returned_unchanged(self):
+        from scry_vision.probe import media_playlist
+
+        media = "#EXTM3U\n#EXTINF:5.0,\nseg0.ts"
+        with mock.patch("scry_vision.probe._fetch", return_value=media):
+            self.assertEqual(media_playlist("https://cdn.example.com/720/index.m3u8"),
+                             "https://cdn.example.com/720/index.m3u8")
+
+    def test_relative_variant_paths_are_made_absolute(self):
+        from scry_vision.probe import media_playlist
+
+        master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=640x360\n360/index.m3u8"
+        with mock.patch("scry_vision.probe._fetch", return_value=master):
+            self.assertEqual(media_playlist("https://cdn.example.com/live/master.m3u8"),
+                             "https://cdn.example.com/live/360/index.m3u8")
+
+
+class ThroughputTest(unittest.TestCase):
+    """A playlist is recognised by what it contains, not what it is called.
+
+    YouTube serves segments from paths containing "/index.m3u8/", so matching on
+    the extension fetched a segment, read its mp4 header as a list of segments,
+    and condemned the camera over a url full of nul bytes.
+    """
+
+    MEDIA = "\n".join([
+        "#EXTM3U",
+        "#EXT-X-TARGETDURATION:5",
+        "#EXTINF:5.0,",
+        "https://cdn.example.com/videoplayback/playlist/index.m3u8/sq/1/file/seg.ts",
+    ])
+
+    def test_a_media_playlist_is_not_mistaken_for_a_master(self):
+        from scry_vision.probe import throughput
+
+        fetched = []
+
+        def fake_fetch(url):
+            fetched.append(url)
+            return self.MEDIA
+
+        with mock.patch("scry_vision.probe._fetch", side_effect=fake_fetch), \
+             mock.patch("scry_vision.probe._get", return_value=b"x" * 1024):
+            out = throughput("https://cdn.example.com/media.m3u8")
+
+        self.assertTrue(out["ok"], out.get("reason"))
+        # One fetch: descending into a segment is what broke it.
+        self.assertEqual(len(fetched), 1)
+
+    def test_a_master_playlist_is_descended(self):
+        from scry_vision.probe import throughput
+
+        master = "\n".join([
+            "#EXTM3U",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=256x144",
+            "https://cdn.example.com/144.m3u8",
+        ])
+        bodies = iter([master, self.MEDIA])
+        with mock.patch("scry_vision.probe._fetch", side_effect=lambda _: next(bodies)), \
+             mock.patch("scry_vision.probe._get", return_value=b"x" * 1024):
+            out = throughput("https://cdn.example.com/master.m3u8")
+        self.assertTrue(out["ok"], out.get("reason"))
