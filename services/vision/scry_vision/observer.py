@@ -5,6 +5,8 @@ Never touches the database; observers are independent processes.
 
 from __future__ import annotations
 
+from .capture import open_capture
+
 import json
 import statistics
 import time
@@ -118,7 +120,7 @@ def detect(mask: np.ndarray, min_area: int) -> list[tuple[Point, float]]:
 
 def observe(url: str, scene, seconds: float, role: str = "primary_vision",
             width: int = 640, height: int = 360) -> dict:
-    capture = cv2.VideoCapture(url)
+    capture = open_capture(url)
     if not capture.isOpened():
         return {"ok": False, "reason": "stream_unreachable"}
 
@@ -147,7 +149,7 @@ def observe(url: str, scene, seconds: float, role: str = "primary_vision",
             misses += 1
             if misses >= RECONNECT_AFTER:
                 capture.release()
-                capture = cv2.VideoCapture(url)
+                capture = open_capture(url)
                 misses = 0
                 if not capture.isOpened():
                     time.sleep(RECONNECT_PAUSE)

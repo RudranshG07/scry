@@ -7,6 +7,8 @@ detector, so a candidate is measured before it is trusted.
 
 from __future__ import annotations
 
+from .capture import open_capture
+
 import argparse
 import json
 import os
@@ -277,7 +279,7 @@ def busiest_band(playlist: str, scene, seconds: float = 60, bands: int = 12) -> 
     yolo = _load(MODELS["primary_vision"].weights)
     classes = list(PEOPLE if scene.unit == "people" else VEHICLES)
 
-    capture = cv2.VideoCapture(playlist)
+    capture = open_capture(playlist)
     if not capture.isOpened():
         return {}
 

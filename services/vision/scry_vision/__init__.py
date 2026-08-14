@@ -15,9 +15,18 @@ import os as _os
 #   Stream timeout triggered after 301740 ms
 #
 # Which reads from the outside exactly like a camera that has gone off air.
+# rw_timeout is the other half. Without it a stalled read blocks forever: an
+# inspection sweep sat on one camera for seventeen minutes —
+#
+#   Stream timeout triggered after 1061020 ms
+#
+# — and every stream behind it in the queue waited too. Fifteen seconds is far
+# longer than any segment boundary and far shorter than a window.
 _os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-    "allowed_extensions;ALL|protocol_whitelist;file,http,https,tcp,tls,crypto",
+    "allowed_extensions;ALL"
+    "|protocol_whitelist;file,http,https,tcp,tls,crypto"
+    "|rw_timeout;15000000",
 )
 
 from .counter import CountLineTracker

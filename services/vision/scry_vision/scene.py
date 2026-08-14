@@ -46,6 +46,30 @@ def fingerprint(frame) -> str:
     return f"{value:016x}"
 
 
+def background(frames) -> str:
+    """A fingerprint of what stays put across several frames.
+
+    One frame fingerprints the traffic as much as the road. Measured on Abbey
+    Road, a camera that had not moved at all, single frames thirty seconds apart
+    differed by up to 18 bits — more than the budget for telling a pan from a
+    busy minute. The per-pixel median across samples drops whatever moved and
+    leaves the buildings, the kerb and the markings, which is the thing the
+    question "has this camera moved" is actually about.
+    """
+    import cv2
+    import numpy as np
+
+    if not frames:
+        return ""
+    small = [
+        cv2.resize(
+            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame,
+            (SIDE, SIDE), interpolation=cv2.INTER_AREA)
+        for frame in frames
+    ]
+    return fingerprint(np.median(np.stack(small), axis=0).astype(np.uint8))
+
+
 def drift(a: str, b: str) -> int:
     """How far apart two fingerprints are, in bits."""
     if not a or not b:

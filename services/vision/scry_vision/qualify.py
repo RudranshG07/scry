@@ -13,6 +13,8 @@ What it has to establish, in order:
 
 from __future__ import annotations
 
+from .capture import open_capture
+
 import json
 import statistics
 import sys
@@ -117,7 +119,7 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
     # was condemned while yt-dlp could still see it live.
     capture = None
     for attempt in range(OPEN_ATTEMPTS):
-        capture = cv2.VideoCapture(playlist)
+        capture = open_capture(playlist)
         if capture.isOpened():
             break
         capture.release()
@@ -128,22 +130,23 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
     if capture is None:
         return Verdict(url, False, f"the stream would not open in {OPEN_ATTEMPTS} attempts")
 
-    from .scene import fingerprint
+    from .scene import background
 
     started = time.monotonic()
-    scene_hash = ""
+    scene_frames: list = []
     seen_frames = 0
     while time.monotonic() - started < seconds:
         ok, frame = capture.read()
         if not ok:
             continue
         seen_frames += 1
-        if not scene_hash and seen_frames > 30:
-            scene_hash = fingerprint(frame)
+        if len(scene_frames) < 9 and seen_frames % 40 == 0:
+            scene_frames.append(frame.copy())
         for primary, verify in watchers.values():
             primary.feed(frame)
             verify.feed(frame)
     capture.release()
+    scene_hash = background(scene_frames)
 
     scored = {
         unit: (_average(primary.samples), _average(verify.samples), primary.peak)
@@ -169,7 +172,7 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
                        counts=unit, subjects=round(primary_avg, 1), peak=peak,
                        disagreement=round(disagreement, 3), realtime=net["realtime_factor"])
 
-    provisional, note, threshold = _too_quiet(playlist, claim, primary_avg, seconds, window)
+    provisional, note, threshold = _too_quiet(playlist, claim, primary_avg, seconds, window, url)
     return Verdict(
         url, True, note, threshold=threshold, scene=scene_hash,
         counts=unit, subjects=round(primary_avg, 1), peak=peak,
@@ -192,7 +195,7 @@ def settle_near(value: float) -> int:
 
 
 def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
-               seconds: float, window: float) -> tuple[bool, str, int]:
+               seconds: float, window: float, source: str = "") -> tuple[bool, str, int]:
     """Whether one subject either way would swing the settled value.
 
     Measured against whatever the market actually settles on. For a level claim
@@ -211,11 +214,30 @@ def _too_quiet(playlist: str, claim: dict | None, occupancy: float,
     from .claims import Claim
     from .crossings import Crossings
 
-    sample = Crossings().observe(
-        playlist,
-        Claim(stream_id="inspection", kind="crossings",
-              target=(claim.get("target") or "anything"), options=claim["options"]),
-        seconds, "primary_vision")
+    counting = Claim(stream_id="inspection", kind="crossings",
+                     target=(claim.get("target") or "anything"), options=claim["options"])
+
+    # The occupancy pass has just held this stream for the best part of a
+    # minute, and opening it again straight away is refused often enough to
+    # matter. Resolve a fresh playlist and try once more before believing it.
+    sample = Crossings().observe(playlist, counting, seconds, "primary_vision")
+    if sample.detail.get("reason") and source:
+        from .probe import resolve as resolve_again
+
+        fresh = resolve_again(source)
+        if fresh:
+            sample = Crossings().observe(fresh, counting, seconds, "primary_vision")
+
+    # A count that could not be taken is not a count of nothing. The observer
+    # reports why it gave up, and reading its zero as an empty road benched two
+    # busy cameras: Fresno measured 0 here and 30 crossings in 45s a few minutes
+    # later, on the same line, with the scene 4 bits from where it qualified.
+    #
+    # Threshold 0 on purpose: the store only writes a threshold above zero, so
+    # whatever was measured last time survives a failed look.
+    failed = sample.detail.get("reason")
+    if failed:
+        return True, f"could not count this window: {failed}", 0
 
     expected = sample.count * (window / seconds) if seconds > 0 else 0.0
     quiet = expected < MIN_FOR_PERCENT

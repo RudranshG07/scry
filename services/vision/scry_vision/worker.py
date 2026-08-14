@@ -18,7 +18,15 @@ JOIN_GRACE = 20
 
 # How long before a window opens the observer resolves its playlist, so the
 # seconds that matter are spent counting rather than talking to yt-dlp.
-WARM_UP = 90
+#
+# Five minutes, not ninety seconds. Resolution takes tens of seconds and
+# sometimes more than a minute under load, so warming up at ninety seconds out
+# overshot the very boundary it exists to protect: the observer arrived 76s late
+# for a grace of twenty, having spent the wait talking to yt-dlp.
+WARM_UP = 300
+
+# Woken this far before the window so the last check happens with time in hand.
+BOUNDARY_MARGIN = 3.0
 
 # Statuses that mean this window is over as far as the API is concerned: the
 # observation closed (409), the market is gone (404), or the report was rejected
@@ -174,12 +182,22 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             if waiting < WARM_UP and warmed != market["id"]:
                 warmed = market["id"]
                 ready = live_camera(stream, source, relay) if (source or relay) else camera
-                print(f"resolved a playlist for {market['id']} ahead of its window", flush=True)
+                # Resolution is not free, so the clock is read again rather than
+                # trusting the number from before it.
+                waiting = (opens - datetime.now(UTC)).total_seconds()
+                print(f"resolved a playlist for {market['id']}, {waiting:.0f}s to go", flush=True)
+                if waiting <= 0:
+                    continue
             print(f"in position for {market['id']} ({market['status']}), "
                   f"counting starts in {waiting:.0f}s", flush=True)
-            if waiting > poll:
-                time.sleep(poll)
-                continue
+            # One sleep to the boundary, not thirty polls at it. Each trip round
+            # this loop is a chance to be descheduled, and the observer kept
+            # arriving 60 to 76 seconds late for a twenty second grace after
+            # sitting in position for the whole window before it. There is
+            # nothing to poll for: the market is picked, and it is re-checked on
+            # the far side of the sleep anyway.
+            time.sleep(max(0.0, waiting - BOUNDARY_MARGIN))
+            continue
             # Inside the last poll, wait out the remainder and start counting
             # without going round again. Re-reading the market list at the
             # boundary means a stalled call costs the whole window: this

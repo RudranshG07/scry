@@ -18,6 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 
+from .capture import open_capture
 from .claims import Claim
 
 # Enough to tell a busy road from an empty one without spending four minutes on
@@ -28,6 +29,11 @@ MIN_CROSSINGS = 2
 # seconds and that came back as a catchphrase — two of anything inside a short
 # listen is how language repeats, not how somebody talks.
 MIN_SAYINGS = 3
+
+# How long to watch that a camera stays pointed at one thing, and how many looks
+# to take while doing it.
+STEADY_SECONDS = 25
+STEADY_SAMPLES = 5
 
 CANDIDATES = {
     "across the middle": [[0.05, 0.50], [0.95, 0.50]],
@@ -120,6 +126,44 @@ def assess_audio(url: str, seconds: float = TRIAL_SECONDS) -> dict:
     }
 
 
+def holds_still(playlist: str, seconds: float = STEADY_SECONDS) -> tuple[bool, int]:
+    """Whether the camera keeps looking at one thing.
+
+    A count line is drawn on a scene, so a feed that cycles between angles can
+    never settle a market: the line stays where it was and counts whatever
+    happens to pass under the new view. Most of what a search for live cameras
+    returns is exactly that — venue channels, multi-camera tours, city roundups.
+    Shibuya's crossing drifted 26 to 36 bits from its own opening frames, where
+    a fixed camera through traffic and nightfall moves by nought.
+    """
+    import cv2
+
+    from .scene import MAX_DRIFT, drift, fingerprint
+
+    capture = open_capture(playlist)
+    if not capture.isOpened():
+        return False, 64
+
+    import time
+
+    seen = 0
+    marks: list[str] = []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline and len(marks) < STEADY_SAMPLES:
+        ok, frame = capture.read()
+        if not ok:
+            continue
+        seen += 1
+        if seen % 60 == 0:
+            marks.append(fingerprint(frame))
+    capture.release()
+
+    if len(marks) < 2:
+        return False, 64
+    worst = max(drift(marks[0], mark) for mark in marks[1:])
+    return worst <= MAX_DRIFT, worst
+
+
 def assess(url: str, seconds: float = TRIAL_SECONDS) -> dict:
     """Whether this link can host markets, and what it should count."""
     from .qualify import inspect
@@ -143,6 +187,14 @@ def assess(url: str, seconds: float = TRIAL_SECONDS) -> dict:
 
     if seen.subjects < MIN_SUBJECTS:
         return {"url": url, "usable": False, "reason": seen.reason}
+
+    # Before spending four counting passes on it, check the camera stays put.
+    # A line drawn on a view that moves is worthless, and the market it hosts
+    # settles on whatever wandered under it.
+    steady, worst = holds_still(playlist)
+    if not steady:
+        return {"url": url, "usable": False,
+                "reason": f"the view moves ({worst} bits of drift); a count line cannot hold on it"}
 
     target = "person" if seen.counts == "people" else "anything"
     line, count, note = propose_line(playlist, target, seconds)

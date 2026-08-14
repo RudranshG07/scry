@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import statistics
 
+from .capture import open_capture
 from .claims import Claim, Reading
 from .crossings import COUNTABLE
 from .detector import MODELS, _load
@@ -41,7 +42,7 @@ class Objects:
         yolo = _load(model.weights)
         classes = [COUNTABLE[claim.target]]
 
-        capture = cv2.VideoCapture(url)
+        capture = open_capture(url)
         if not capture.isOpened():
             return Reading(0, [], detail={"reason": "stream unreachable"})
 

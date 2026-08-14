@@ -70,6 +70,7 @@ class AssessTest(unittest.TestCase):
     def test_a_busy_scene_comes_back_with_a_line_to_count_across(self):
         with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
              mock.patch("scry_vision.qualify.inspect", return_value=self._verdict()), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 1)), \
              mock.patch("scry_vision.discover.propose_line",
                         return_value=([[0.05, 0.5], [0.95, 0.5]], 7, "across the middle")):
             out = assess("https://example.com/live", seconds=1)
@@ -81,6 +82,7 @@ class AssessTest(unittest.TestCase):
     def test_people_and_vehicles_become_different_claims(self):
         with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
              mock.patch("scry_vision.qualify.inspect", return_value=self._verdict(counts="people")), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 1)), \
              mock.patch("scry_vision.discover.propose_line",
                         return_value=([[0.05, 0.42], [0.95, 0.42]], 8, "across the far side")):
             out = assess("https://example.com/live", seconds=1)
@@ -90,6 +92,7 @@ class AssessTest(unittest.TestCase):
     def test_a_scene_where_nothing_crosses_is_not_offered_a_market(self):
         with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
              mock.patch("scry_vision.qualify.inspect", return_value=self._verdict()), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 1)), \
              mock.patch("scry_vision.discover.propose_line",
                         return_value=(None, MIN_CROSSINGS - 1, "nothing crossed")):
             out = assess("https://example.com/live", seconds=1)
@@ -124,6 +127,7 @@ class QuietHoursTest(unittest.TestCase):
              mock.patch("scry_vision.qualify.inspect",
                         return_value=mock.Mock(usable=True, provisional=True, subjects=12.0,
                                                counts="vehicles", reason="quiet enough")), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 1)), \
              mock.patch("scry_vision.discover.propose_line",
                         return_value=([[0.05, 0.5], [0.95, 0.5]], 9, "across the middle")):
             out = assess("https://example.com/live", seconds=1)
@@ -189,3 +193,58 @@ class PhraseProposalTest(unittest.TestCase):
         self.assertEqual(out["claim"]["kind"], "phrase")
         self.assertEqual(out["claim"]["target"], "hello guys")
         self.assertEqual(out["category"], "Speech")
+
+
+class SteadyViewTest(unittest.TestCase):
+    """A count line only means something on a camera that stays put.
+
+    Most of what a live-camera search returns cycles between angles: venue
+    channels, multi-camera tours, city roundups. Shibuya drifted 26 to 36 bits
+    from its own opening frames while a fixed camera moves by nought through
+    traffic and nightfall.
+    """
+
+    def test_a_moving_view_is_refused_before_lines_are_tried(self):
+        with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
+             mock.patch("scry_vision.qualify.inspect",
+                        return_value=mock.Mock(usable=True, provisional=False, subjects=12.0,
+                                               counts="people", reason="usable")), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(False, 31)), \
+             mock.patch("scry_vision.discover.propose_line") as lines:
+            out = assess("https://example.com/live", seconds=1)
+        self.assertFalse(out["usable"])
+        self.assertIn("moves", out["reason"])
+        # Four counting passes on a view that will not hold is two minutes wasted.
+        lines.assert_not_called()
+
+    def test_a_fixed_view_goes_on_to_be_counted(self):
+        with mock.patch("scry_vision.probe.resolve", return_value="playlist"), \
+             mock.patch("scry_vision.qualify.inspect",
+                        return_value=mock.Mock(usable=True, provisional=False, subjects=12.0,
+                                               counts="vehicles", reason="usable")), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 2)), \
+             mock.patch("scry_vision.discover.holds_still", return_value=(True, 1)), \
+             mock.patch("scry_vision.discover.propose_line",
+                        return_value=([[0.05, 0.5], [0.95, 0.5]], 9, "across the middle")):
+            out = assess("https://example.com/live", seconds=1)
+        self.assertTrue(out["usable"], out["reason"])
+
+    def test_a_camera_that_will_not_open_is_not_called_steady(self):
+        from scry_vision.discover import holds_still
+
+        capture = mock.Mock()
+        capture.isOpened.return_value = False
+        with mock.patch("cv2.VideoCapture", return_value=capture):
+            steady, worst = holds_still("playlist", seconds=1)
+        self.assertFalse(steady)
+        self.assertEqual(worst, 64)
+
+    def test_one_look_is_not_enough_to_call_a_view_steady(self):
+        from scry_vision.discover import holds_still
+
+        capture = mock.Mock()
+        capture.isOpened.return_value = True
+        capture.read.return_value = (False, None)
+        with mock.patch("cv2.VideoCapture", return_value=capture):
+            steady, _ = holds_still("playlist", seconds=0.2)
+        self.assertFalse(steady)

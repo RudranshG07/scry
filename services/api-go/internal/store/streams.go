@@ -65,9 +65,10 @@ func (s *Postgres) SubmitStream(ctx context.Context, sub domain.StreamSubmission
 			-- A camera that was re-aimed or came back up deserves another pass,
 			-- and without this it keeps whatever suspended it forever.
 			qualification = '{}'::jsonb
-		RETURNING id, coalesce(source_url, ''), status, coalesce(default_claim, '{}'::jsonb)`,
+		RETURNING id, name, region, timezone, coalesce(source_url, ''), status,
+		          coalesce(default_claim, '{}'::jsonb)`,
 		id, sub.Name, sub.Category, sub.Region, sub.Timezone, sub.SourceURL, by, claim,
-	).Scan(&out.ID, &out.SourceURL, &out.Status, &out.Claim)
+	).Scan(&out.ID, &out.Name, &out.Region, &out.Timezone, &out.SourceURL, &out.Status, &out.Claim)
 	if err != nil {
 		return domain.StreamSource{}, fmt.Errorf("submit stream: %w", err)
 	}
@@ -80,7 +81,8 @@ func (s *Postgres) SubmitStream(ctx context.Context, sub domain.StreamSubmission
 // sees rather than a copy that drifts.
 func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, coalesce(source_url, ''), status, coalesce(default_claim, '{}'::jsonb)
+		SELECT id, name, region, timezone, coalesce(source_url, ''), status,
+		       coalesce(default_claim, '{}'::jsonb)
 		FROM streams
 		WHERE status = 'Qualified'
 		  AND coalesce(btrim(source_url), '') <> ''
@@ -94,7 +96,8 @@ func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error)
 	out := []domain.StreamSource{}
 	for rows.Next() {
 		var stream domain.StreamSource
-		if err := rows.Scan(&stream.ID, &stream.SourceURL, &stream.Status, &stream.Claim); err != nil {
+		if err := rows.Scan(&stream.ID, &stream.Name, &stream.Region, &stream.Timezone,
+			&stream.SourceURL, &stream.Status, &stream.Claim); err != nil {
 			return nil, err
 		}
 		out = append(out, stream)
@@ -121,7 +124,8 @@ func (s *Postgres) SceneForMarket(ctx context.Context, marketID string) (string,
 // can only ever void.
 func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration) ([]domain.StreamSource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, coalesce(source_url, ''), status, coalesce(default_claim, '{}'::jsonb)
+		SELECT id, name, region, timezone, coalesce(source_url, ''), status,
+		       coalesce(default_claim, '{}'::jsonb)
 		FROM streams
 		WHERE coalesce(btrim(source_url), '') <> ''
 		  AND (qualification->>'inspectedAt' IS NULL
@@ -135,7 +139,8 @@ func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration
 	var out []domain.StreamSource
 	for rows.Next() {
 		var s domain.StreamSource
-		if err := rows.Scan(&s.ID, &s.SourceURL, &s.Status, &s.Claim); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.Region, &s.Timezone, &s.SourceURL,
+			&s.Status, &s.Claim); err != nil {
 			return nil, err
 		}
 		out = append(out, s)

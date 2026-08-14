@@ -60,6 +60,9 @@ type Market struct {
 // StreamSource is a submitted link and what the last inspection made of it.
 type StreamSource struct {
 	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	Timezone  string `json:"timezone"`
 	SourceURL string `json:"sourceUrl"`
 	Status    string `json:"status"`
 	// What this stream is set up to count. An inspection has to measure the

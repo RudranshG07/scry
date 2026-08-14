@@ -614,3 +614,41 @@ class ThroughputTest(unittest.TestCase):
              mock.patch("scry_vision.probe._get", return_value=b"x" * 1024):
             out = throughput("https://cdn.example.com/master.m3u8")
         self.assertTrue(out["ok"], out.get("reason"))
+
+
+class CaptureTimeoutTest(unittest.TestCase):
+    """Opening a camera has to give up rather than hang.
+
+    OpenCV's ffmpeg backend has two clocks. The options in
+    OPENCV_FFMPEG_CAPTURE_OPTIONS go to ffmpeg; the interrupt callback that
+    abandons a stalled read is OpenCV's own and listens only to these
+    properties. An inspection sweep sat on one camera for seventeen minutes with
+    every stream behind it waiting.
+    """
+
+    def test_both_timeouts_are_passed_to_the_backend(self):
+        import cv2
+        from scry_vision.capture import OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, open_capture
+
+        with mock.patch("cv2.VideoCapture") as capture:
+            open_capture("playlist")
+        _, args, _ = capture.mock_calls[0]
+        self.assertEqual(args[0], "playlist")
+        self.assertEqual(args[1], cv2.CAP_FFMPEG)
+        params = args[2]
+        self.assertIn(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, params)
+        self.assertIn(cv2.CAP_PROP_READ_TIMEOUT_MSEC, params)
+        self.assertEqual(params[params.index(cv2.CAP_PROP_READ_TIMEOUT_MSEC) + 1], READ_TIMEOUT_MS)
+        self.assertEqual(params[params.index(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC) + 1], OPEN_TIMEOUT_MS)
+
+    def test_every_capture_site_goes_through_the_helper(self):
+        import pathlib
+
+        # A raw cv2.VideoCapture anywhere reintroduces the hang for that path
+        # only, which is the hardest kind of regression to notice.
+        root = pathlib.Path(__file__).resolve().parents[1] / "scry_vision"
+        offenders = [
+            path.name for path in root.glob("*.py")
+            if path.name != "capture.py" and "cv2.VideoCapture(" in path.read_text()
+        ]
+        self.assertEqual(offenders, [])

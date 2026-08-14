@@ -125,8 +125,80 @@ class SceneTest(unittest.TestCase):
         panned = np.roll(base, 260, axis=1)
         self.assertFalse(same_scene(fingerprint(base), fingerprint(panned)))
 
+    def test_traffic_is_averaged_out_of_a_background_fingerprint(self):
+        import cv2
+        import numpy as np
+        from scry_vision.scene import background, drift, same_scene
+
+        base = self._road()
+        # The same road with different traffic in each frame. A single frame
+        # fingerprints the cars as much as the road: on a camera that had not
+        # moved, frames thirty seconds apart measured 18 bits apart.
+        def busy(offsets):
+            out = []
+            for dx in offsets:
+                frame = base.copy()
+                for x, y in ((300 + dx, 560), (700 + dx, 600), (1000 + dx, 540)):
+                    cv2.rectangle(frame, (x, y), (x + 90, y + 45), (30, 30, 140), -1)
+                out.append(frame)
+            return out
+
+        first = background(busy([0, 40, 80, 120, 160]))
+        later = background(busy([200, 240, 280, 320, 360]))
+        self.assertEqual(drift(first, later), 0)
+        self.assertTrue(same_scene(first, later))
+
+    def test_a_moved_camera_still_shows_through_the_background(self):
+        import numpy as np
+        from scry_vision.scene import background, same_scene
+
+        base = self._road()
+        panned = [np.roll(base, 260, axis=1)] * 5
+        self.assertFalse(same_scene(background([base] * 5), background(panned)))
+
+    def test_no_frames_is_not_a_fingerprint(self):
+        from scry_vision.scene import background
+
+        self.assertEqual(background([]), "")
+
     def test_a_missing_fingerprint_never_matches(self):
         from scry_vision.scene import drift, same_scene
 
         self.assertEqual(drift("", "95689182cb4fbc3b"), 64)
         self.assertFalse(same_scene("", "95689182cb4fbc3b"))
+
+
+class UncountedWindowTest(unittest.TestCase):
+    """A window that could not be counted is not a window with nothing in it.
+
+    The observer returns a count of zero and a reason when it gives up. Reading
+    the zero and ignoring the reason marked two busy cameras quiet: Fresno
+    measured 0 during inspection and 30 crossings in 45s minutes later, same
+    line, scene 4 bits from where it qualified.
+    """
+
+    CLAIM = {"kind": "crossings", "target": "anything",
+             "options": {"line": [[0.5, 0.25], [0.5, 0.85]]}}
+
+    def test_a_stream_that_would_not_open_is_not_called_quiet(self):
+        with mock.patch("scry_vision.crossings.Crossings.observe",
+                        return_value=Reading(0, [], detail={"reason": "stream unreachable"})):
+            quiet, note, threshold = _too_quiet("playlist", self.CLAIM, 12.0, 45, 900)
+        self.assertTrue(quiet)
+        self.assertIn("could not count", note)
+        # Zero so the store keeps whatever was measured last time.
+        self.assertEqual(threshold, 0)
+
+    def test_a_genuinely_empty_road_still_reads_as_quiet(self):
+        with mock.patch("scry_vision.crossings.Crossings.observe",
+                        return_value=Reading(0, [], detail={"frames": 900, "seen": 3})):
+            quiet, note, _ = _too_quiet("playlist", self.CLAIM, 12.0, 45, 900)
+        self.assertTrue(quiet)
+        self.assertIn("crossings a window", note)
+
+    def test_a_busy_road_is_unaffected(self):
+        with mock.patch("scry_vision.crossings.Crossings.observe",
+                        return_value=Reading(30, [], detail={"frames": 1131})):
+            quiet, note, threshold = _too_quiet("playlist", self.CLAIM, 12.0, 45, 900)
+        self.assertFalse(quiet, note)
+        self.assertGreater(threshold, 0)

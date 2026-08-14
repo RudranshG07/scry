@@ -15,13 +15,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from .capture import open_capture
 from .claims import Claim, Reading
 from .counter import CountLineTracker
 from .detector import MODELS, _load
 from .evidence import bundle, chain, digest, stamp
 from .health import Health
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
-from .scene import fingerprint
+from .scene import background
 
 # COCO classes worth counting on a road or a pavement.
 COUNTABLE = {
@@ -42,6 +43,11 @@ WIDTH, HEIGHT = 1280, 720
 # across the line at ordinary speeds.
 SAMPLE_FPS = 8.0
 SAMPLE_INTERVAL = 1.0 / SAMPLE_FPS
+
+# Frames kept for the scene fingerprint, and how often one is taken. Spread out
+# so the median covers a stretch of the window rather than one moment of it.
+SCENE_FRAMES = 9
+SCENE_EVERY = 40
 
 
 def classes_for(target: str) -> list[int]:
@@ -123,7 +129,7 @@ class Crossings:
             else None
         )
 
-        capture = cv2.VideoCapture(url)
+        capture = open_capture(url)
         if not capture.isOpened():
             return Reading(0, [], detail={"reason": "stream unreachable"})
 
@@ -135,7 +141,7 @@ class Crossings:
         seen = 0
         last_position: float | None = None
         last_sampled: float | None = None
-        scene_hash: str | None = None
+        scene_frames: list = []
         chained = digest(f"{url}|{started.isoformat()}".encode())
         samples: list[dict] = []
         bucket_started = started
@@ -169,11 +175,13 @@ class Crossings:
                 last_sampled = position
 
             sampled += 1
-            # Taken from the middle of the window rather than the first frame,
-            # which on a stream that has just been opened is as likely to be a
-            # keyframe of an advert as of the road.
-            if scene_hash is None and sampled > 30:
-                scene_hash = fingerprint(frame)
+            # Spread across the window, and fingerprinted together at the end.
+            # A single frame fingerprints the traffic as much as the road: on a
+            # camera that had not moved, frames thirty seconds apart differed by
+            # 18 bits, against a budget of 12 for telling a pan from a busy
+            # minute. The median of these drops whatever moved.
+            if len(scene_frames) < SCENE_FRAMES and sampled % SCENE_EVERY == 0:
+                scene_frames.append(frame.copy())
             chained = chain(chained, frame.tobytes())
 
             # Native frame, not a downscaled one: resizing before inference cost
@@ -222,6 +230,7 @@ class Crossings:
         capture.release()
         elapsed = (datetime.now(UTC) - started).total_seconds()
         count = forward.count + (backward.count if backward else 0)
+        scene_hash = background(scene_frames)
 
         tail = (datetime.now(UTC) - bucket_started).total_seconds()
         if tail >= 1:

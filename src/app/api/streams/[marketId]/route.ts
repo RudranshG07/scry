@@ -26,6 +26,39 @@ const minimumRealtime = 1.1;
 
 const cache = new Map<string, { at: number; value: ResolvedStream }>();
 
+type ApiStream = { id: string; name: string; timezone: string; sourceUrl: string };
+
+/**
+ * What the backend says this market's camera is.
+ *
+ * The pool in markets.ts is a floor for streams that predate the front door,
+ * not the source of truth. Anything submitted through the API — which is how
+ * cameras arrive now, and how they are replaced when one dies — is unknown to
+ * it, so a market on one resolved to nothing and the player showed its error
+ * state over a stream that was working.
+ */
+async function sourceFromApi(marketId: string) {
+  const api = process.env.NEXT_PUBLIC_SCRY_API_URL?.trim().replace(/\/+$/, "");
+  if (!api) return null;
+
+  try {
+    const response = await fetch(`${api}/v1/streams`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(probeTimeoutMs),
+    });
+    if (!response.ok) return null;
+
+    const streams = (await response.json()) as ApiStream[];
+    // Market ids are the stream id plus a timestamp, so the longest matching
+    // stream wins: one id that prefixes another must not capture it.
+    const matches = streams.filter((stream) => marketId.startsWith(stream.id) && stream.sourceUrl);
+    if (matches.length === 0) return null;
+    return matches.reduce((longest, stream) => (stream.id.length > longest.id.length ? stream : longest));
+  } catch {
+    return null;
+  }
+}
+
 function localHour(timeZone: string) {
   const hour = new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone }).format(new Date());
   return Number.parseInt(hour, 10);
@@ -123,7 +156,11 @@ export async function GET(_request: Request, context: { params: Promise<{ market
     return Response.json(value, { headers: { "Cache-Control": "no-store" } });
   };
 
-  const sources = sourcesFor(marketId);
+  const known = await sourceFromApi(marketId);
+  const sources = known
+    ? [{ url: known.sourceUrl, name: known.name || known.id, timeZone: known.timezone || "UTC" },
+       ...sourcesFor(marketId)]
+    : sourcesFor(marketId);
 
   // An origin we control always wins: mediamtx reconnects behind a stable path.
   const origin = process.env.SCRY_MEDIA_ORIGIN?.trim().replace(/\/+$/, "");
