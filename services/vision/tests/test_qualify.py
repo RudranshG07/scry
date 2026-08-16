@@ -202,3 +202,48 @@ class UncountedWindowTest(unittest.TestCase):
             quiet, note, threshold = _too_quiet("playlist", self.CLAIM, 12.0, 45, 900)
         self.assertFalse(quiet, note)
         self.assertGreater(threshold, 0)
+
+
+class MovingViewTest(unittest.TestCase):
+    """A camera is only qualified if it is still pointed where it was.
+
+    A feed that cycles between angles holds still across any short sample:
+    Shibuya and a car-spotting channel both passed a 25 second steadiness check,
+    qualified, and then failed scene_changed on every window they hosted. The
+    second look happens a minute and a half after the first, which is long
+    enough for a switch to show.
+    """
+
+    def test_a_view_that_moved_is_refused(self):
+        from scry_vision.qualify import _has_moved
+
+        with mock.patch("scry_vision.scene.background", return_value="b5125fb1426aba95"), \
+             mock.patch("scry_vision.capture.open_capture") as capture:
+            capture.return_value.isOpened.return_value = True
+            capture.return_value.read.side_effect = [(True, object())] * 400
+            moved = _has_moved("playlist", "d1d1d1d094f4ee0d")
+        # 30 bits apart, measured on the camera this was written for.
+        self.assertGreater(moved, 12)
+
+    def test_a_view_that_held_still_passes(self):
+        from scry_vision.qualify import _has_moved
+
+        same = "d1d1d1d094f4ee0d"
+        with mock.patch("scry_vision.scene.background", return_value=same), \
+             mock.patch("scry_vision.capture.open_capture") as capture:
+            capture.return_value.isOpened.return_value = True
+            capture.return_value.read.side_effect = [(True, object())] * 400
+            self.assertEqual(_has_moved("playlist", same), 0)
+
+    def test_no_first_fingerprint_means_no_verdict(self):
+        from scry_vision.qualify import _has_moved
+
+        # Streams qualified before fingerprints existed must not all be refused.
+        self.assertEqual(_has_moved("playlist", ""), 0)
+
+    def test_a_camera_that_will_not_reopen_is_not_accused_of_moving(self):
+        from scry_vision.qualify import _has_moved
+
+        with mock.patch("scry_vision.capture.open_capture") as capture:
+            capture.return_value.isOpened.return_value = False
+            self.assertEqual(_has_moved("playlist", "d1d1d1d094f4ee0d"), 0)

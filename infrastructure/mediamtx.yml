@@ -2,9 +2,21 @@ logLevel: info
 
 hls: yes
 hlsAddress: :8888
-hlsVariant: lowLatency
+# mpegts and a minute of buffer, not low latency and seven seconds.
+#
+# An observer reads one path continuously for fifteen minutes. With a 7s window
+# any stall drops it off the back and the missing footage shows up as blind
+# time: both observers reported uptime around 0.70 against a 0.95 floor while
+# the camera itself was fine. Latency does not matter here — nothing settles on
+# how fresh the frame is, only on how much of the window was seen.
+hlsVariant: mpegts
 hlsAlwaysRemux: yes
-hlsSegmentCount: 7
+# Sixty one-second segments, not thirty two-second ones: the same minute of
+# buffer with half the jump at each boundary. An observer counts any gap in
+# footage over a second as blind time, so two-second segments spent a share of
+# every window looking broken — uptime 0.93 against a 0.95 floor on a camera
+# that was fine.
+hlsSegmentCount: 60
 hlsSegmentDuration: 1s
 hlsAllowOrigin: "*"
 

@@ -173,12 +173,55 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
                        disagreement=round(disagreement, 3), realtime=net["realtime_factor"])
 
     provisional, note, threshold = _too_quiet(playlist, claim, primary_avg, seconds, window, url)
+
+    # The scene again, a minute and a half after the first look. A feed that
+    # cycles between angles holds still across any short sample — Shibuya and a
+    # car-spotting channel both passed a 25 second steadiness check and then
+    # failed scene_changed on every window they hosted. A count line drawn on a
+    # view that will not be there in ten minutes is worth nothing, so the camera
+    # is refused now rather than after a day of markets that all void.
+    moved = _has_moved(playlist, scene_hash)
+    if moved:
+        return Verdict(url, False,
+                       f"the view moves: {moved} bits from where it was a minute ago",
+                       counts=unit, subjects=round(primary_avg, 1), peak=peak,
+                       disagreement=round(disagreement, 3), realtime=net["realtime_factor"])
+
     return Verdict(
         url, True, note, threshold=threshold, scene=scene_hash,
         counts=unit, subjects=round(primary_avg, 1), peak=peak,
         disagreement=round(disagreement, 3), realtime=net["realtime_factor"],
         provisional=provisional,
     )
+
+
+def _has_moved(playlist: str, first: str) -> int:
+    """Bits of drift from the scene recorded at the start, or 0 if it held."""
+    from .capture import open_capture
+    from .scene import MAX_DRIFT, background, drift
+
+    if not first:
+        return 0
+
+    capture = open_capture(playlist)
+    if not capture.isOpened():
+        # Nothing seen is not evidence the camera moved.
+        return 0
+
+    frames, seen = [], 0
+    while seen < 400 and len(frames) < 9:
+        ok, frame = capture.read()
+        if not ok:
+            continue
+        seen += 1
+        if seen % 40 == 0:
+            frames.append(frame)
+    capture.release()
+
+    if len(frames) < 2:
+        return 0
+    apart = drift(background(frames), first)
+    return apart if apart > MAX_DRIFT else 0
 
 
 def settle_near(value: float) -> int:
