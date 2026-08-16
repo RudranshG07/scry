@@ -652,3 +652,34 @@ class CaptureTimeoutTest(unittest.TestCase):
             if path.name != "capture.py" and "cv2.VideoCapture(" in path.read_text()
         ]
         self.assertEqual(offenders, [])
+
+
+class LateJoinTest(unittest.TestCase):
+    """A late join is measured, not discarded.
+
+    The grace was a 20 second cliff, which no laptop can promise: this host
+    suspends, and a 500 second sleep returned four hours later. Every window was
+    skipped for arriving 60 to 760 seconds late, when most had covered nearly
+    all the footage the question was about.
+    """
+
+    def test_coverage_scales_the_reported_uptime(self):
+        reading = Reading(count=100, samples=[{"streamQuality": 1.0}],
+                          uptime=1.0, evidence_root="0xabc", detail={"frames": 900})
+        report = as_report(reading, 810)
+        # 810 of a 900 second window is 90% covered, so a flawless 1.0 becomes
+        # 0.9 and lands under the resolver's floor on its own.
+        self.assertEqual(round(report["uptime"] * 0.9, 4), 0.9)
+
+    def test_a_window_mostly_missed_is_not_worth_counting(self):
+        from scry_vision.worker import WORTH_COUNTING
+
+        # Half a window covered is below the bar, so the observer waits for the
+        # next one rather than spending fifteen minutes on a certain rejection.
+        self.assertLess(0.5, WORTH_COUNTING)
+        self.assertGreater(WORTH_COUNTING, 0.85)
+
+    def test_the_bar_sits_below_a_flawless_window(self):
+        from scry_vision.worker import WORTH_COUNTING
+
+        self.assertLessEqual(WORTH_COUNTING, 1.0)

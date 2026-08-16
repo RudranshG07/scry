@@ -73,7 +73,10 @@ observers() {
   # for five minutes at a time, and the observer woke after the window had
   # already opened and correctly declined it -- every window, all night.
   local keepawake=""
-  command -v caffeinate >/dev/null 2>&1 && keepawake="caffeinate -i"
+  # -dims, not -i: -i blocks idle sleep only. This host suspended anyway,
+  # and a 500 second sleep came back four hours later with every window
+  # in between missed.
+  command -v caffeinate >/dev/null 2>&1 && keepawake="caffeinate -dims"
 
   while read -r stream source; do
     [ -z "$stream" ] && continue

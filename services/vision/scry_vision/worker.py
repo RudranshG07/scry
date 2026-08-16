@@ -16,6 +16,10 @@ class StreamMismatch(Exception):
 
 JOIN_GRACE = 20
 
+# Below this share of a window there is nothing worth reporting: the resolver's
+# uptime floor would refuse it anyway, and counting it costs a whole window.
+WORTH_COUNTING = 0.90
+
 # How long before a window opens the observer resolves its playlist, so the
 # seconds that matter are spent counting rather than talking to yt-dlp.
 #
@@ -27,6 +31,11 @@ WARM_UP = 300
 
 # Woken this far before the window so the last check happens with time in hand.
 BOUNDARY_MARGIN = 3.0
+
+# No single sleep longer than this. Far from the window it keeps the observer
+# saying where it is; close to it the remaining wait is shorter than this anyway
+# and the boundary is still hit in one go.
+LONGEST_SLEEP = 60.0
 
 # Statuses that mean this window is over as far as the API is concerned: the
 # observation closed (409), the market is gone (404), or the report was rejected
@@ -190,13 +199,13 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
                     continue
             print(f"in position for {market['id']} ({market['status']}), "
                   f"counting starts in {waiting:.0f}s", flush=True)
-            # One sleep to the boundary, not thirty polls at it. Each trip round
-            # this loop is a chance to be descheduled, and the observer kept
-            # arriving 60 to 76 seconds late for a twenty second grace after
-            # sitting in position for the whole window before it. There is
-            # nothing to poll for: the market is picked, and it is re-checked on
-            # the far side of the sleep anyway.
-            time.sleep(max(0.0, waiting - BOUNDARY_MARGIN))
+            # Sleep towards the boundary rather than polling at it — thirty trips
+            # round this loop is thirty chances to be descheduled, and the
+            # observer kept arriving 60 to 76 seconds late for a twenty second
+            # grace. But bounded: one long sleep left it parked in time.sleep
+            # for the best part of an hour with nothing in the log, which is a
+            # worse failure than being late, because there is nothing to see.
+            time.sleep(min(LONGEST_SLEEP, max(0.0, waiting - BOUNDARY_MARGIN)))
             continue
             # Inside the last poll, wait out the remainder and start counting
             # without going round again. Re-reading the market list at the
@@ -206,13 +215,26 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             time.sleep(max(0.0, waiting))
             now = datetime.now(UTC)
 
-        # A partial count answers a whole-window question wrongly, so it voids.
-        if now > opens + timedelta(seconds=JOIN_GRACE):
-            behind = (now - opens).total_seconds()
-            print(f"joined {market['id']} {behind:.0f}s after its window opened "
-                  f"(grace is {JOIN_GRACE}s), skipping", flush=True)
+        # A partial count answers a whole-window question wrongly — but that is
+        # what uptime is for, and it is a measurement rather than a cliff. The
+        # coverage is folded into the report below, so a late join fails the
+        # resolver's floor on its own if it missed too much.
+        #
+        # The cliff was 20 seconds, which nothing on a laptop can promise: this
+        # host suspends, and a sleep of 500 seconds came back four hours later.
+        # Every window was skipped for arriving 60 to 760 seconds late, when
+        # most of them had covered nearly all of the footage that mattered.
+        window = (closes - opens).total_seconds()
+        behind = max(0.0, (now - opens).total_seconds())
+        covered = 1.0 - behind / window if window > 0 else 0.0
+        if covered < WORTH_COUNTING:
+            print(f"joined {market['id']} {behind:.0f}s into a {window:.0f}s window, "
+                  f"only {covered:.0%} of it left, skipping", flush=True)
             done.add(market["id"])
             continue
+        if behind > 0:
+            print(f"joined {market['id']} {behind:.0f}s late, covering {covered:.0%} "
+                  f"of the window", flush=True)
 
         # Resolved per window, not once at startup. A signed playlist expires,
         # and the observer went on watching the dead url: frames stopped
@@ -235,6 +257,10 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
 
         reading = watcher.observe(watching, claim, left, role)
         result = as_report(reading, left)
+        # Uptime is a share of the market's window, not of the stretch this
+        # observer happened to watch. A late join that saw perfect footage for
+        # the part it caught has still not covered the question being asked.
+        result["uptime"] = round(result["uptime"] * covered, 4)
         print("  " + json.dumps({k: v for k, v in result.items() if k != "counts"}), flush=True)
 
         status, body = submit(api, market["id"], observer, role, result)
