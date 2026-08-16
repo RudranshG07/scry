@@ -16,8 +16,20 @@ from __future__ import annotations
 
 # Hamming distance between two 64 bit fingerprints. Below this is the same view
 # under different traffic and light; above it the camera is somewhere else.
-# Daylight to floodlit on one camera measured in the low single digits.
-MAX_DRIFT = 12
+#
+# Measured rather than guessed, on live cameras:
+#   the same view sampled repeatedly        0 bits, exactly, every time
+#   the same view at 854x480 vs 1920x1080   4 bits
+#   the same road three hours later         18 bits
+#   a different camera, or one that panned  30 to 36 bits
+#
+# The fingerprint is stable to the bit within a session, so the 18 is not noise:
+# it is the sun moving. Dropping the DC term takes overall brightness out, but
+# not where the shadows fall. That leaves a narrow gap between a day passing and
+# a camera moving, and the only reason it holds is that streams are inspected
+# every six hours, which re-bases the fingerprint before the light has moved
+# that far.
+MAX_DRIFT = 24
 
 SIDE = 32
 KEPT = 8

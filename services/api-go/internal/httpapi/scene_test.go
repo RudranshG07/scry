@@ -50,3 +50,16 @@ func TestAStreamQualifiedBeforeFingerprintsIsNotPenalised(t *testing.T) {
 		t.Error("a stream with no recorded scene had its market voided")
 	}
 }
+
+func TestTheBarClearsMeasuredNoiseAndCatchesAMove(t *testing.T) {
+	// Measured on live cameras: the same view wanders up to 12 bits between
+	// samples, and one that has moved lands at 30 or more. A bar inside that
+	// noise voided a market whose observers both had full uptime and agreed to
+	// within 10%.
+	if maxSceneDrift <= 12 {
+		t.Errorf("maxSceneDrift = %d sits inside the noise a still camera makes", maxSceneDrift)
+	}
+	if maxSceneDrift >= 30 {
+		t.Errorf("maxSceneDrift = %d would let a camera that moved pass", maxSceneDrift)
+	}
+}

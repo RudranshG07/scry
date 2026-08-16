@@ -6,10 +6,13 @@ import (
 	"strconv"
 )
 
-// How far a scene fingerprint may drift and still be the same view. Traffic and
-// nightfall move it by a bit or two; a pan or a cut to another camera moves it
-// by thirty.
-const maxSceneDrift = 12
+// How far a scene fingerprint may drift and still be the same view. Kept in
+// step with MAX_DRIFT in scry_vision/scene.py, which carries the measurements:
+// the same view fingerprints identically within a session, drifts about 18 bits
+// across three hours of daylight, and lands at 30 or more once the camera has
+// actually moved. The gap is narrow and holds only because inspection re-bases
+// the fingerprint every six hours.
+const maxSceneDrift = 24
 
 // QualifiedScenes reports the view each stream was qualified on.
 type QualifiedScenes interface {
