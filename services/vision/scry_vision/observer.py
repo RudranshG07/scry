@@ -240,6 +240,11 @@ def submit(api: str, market: str, observer: str, role: str, result: dict) -> tup
         "longestFrozenSeconds": result.get("frozenSeconds", 0.0),
         "invalidReasons": reasons,
         "evidenceRoot": result.get("evidenceRoot") or None,
+        # What the camera was looking at. Left out of this payload, the API
+        # received nothing, scored an absent fingerprint as maximally distant,
+        # and flagged scene_changed on every report ever filed — which no
+        # threshold could fix, because the value it compares was never sent.
+        "sceneHash": result.get("sceneHash", ""),
         "counts": result.get("counts", []),
     }).encode()
 

@@ -683,3 +683,47 @@ class LateJoinTest(unittest.TestCase):
         from scry_vision.worker import WORTH_COUNTING
 
         self.assertLessEqual(WORTH_COUNTING, 1.0)
+
+
+class SubmittedPayloadTest(unittest.TestCase):
+    """Everything the API reads has to be in the body the observer sends.
+
+    as_report built the scene fingerprint and submit() dropped it, so the API
+    compared against nothing, scored it maximally distant, and flagged
+    scene_changed on every report. No threshold could fix that, because the
+    value being compared never left the observer.
+    """
+
+    # Fields postObservation decodes and acts on.
+    REQUIRED = {
+        "observerId", "role", "observedValue", "modelVersion", "uptime",
+        "averageVisibility", "invalidReasons", "evidenceRoot", "sceneHash", "counts",
+    }
+
+    def test_the_body_carries_every_field_the_api_uses(self):
+        import json
+        from scry_vision.observer import submit
+
+        reading = Reading(count=42, samples=[{"streamQuality": 1.0}], uptime=1.0,
+                          evidence_root="0xabc",
+                          detail={"frames": 900, "sceneHash": "d12625216a763f6d",
+                                  "model": "yolov8s"})
+        sent = {}
+
+        class Response:
+            status = 202
+            def read(self): return b'{"status":"accepted"}'
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def capture(request, timeout=0):
+            sent.update(json.loads(request.data))
+            return Response()
+
+        with mock.patch("urllib.request.urlopen", side_effect=capture):
+            submit("http://api", "market-1", "vision-01", "primary_vision",
+                   as_report(reading, 900))
+
+        missing = self.REQUIRED - set(sent)
+        self.assertEqual(missing, set(), f"submit() dropped {missing}")
+        self.assertEqual(sent["sceneHash"], "d12625216a763f6d")
