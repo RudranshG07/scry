@@ -18,10 +18,15 @@ type Engine struct {
 	// and an unusable claim does not fix itself, so without this the reason
 	// scrolls past once a second and buries everything else in the log.
 	warned map[string]bool
+	// How many observation windows may be in flight at once.
+	pairs int
 }
 
-func New(pool *pgxpool.Pool, log *slog.Logger) *Engine {
-	return &Engine{pool: pool, tick: time.Second, log: log, warned: map[string]bool{}}
+func New(pool *pgxpool.Pool, log *slog.Logger, pairs int) *Engine {
+	if pairs < 1 {
+		pairs = 1
+	}
+	return &Engine{pool: pool, tick: time.Second, log: log, warned: map[string]bool{}, pairs: pairs}
 }
 
 func (e *Engine) Run(ctx context.Context) {

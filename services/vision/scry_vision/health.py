@@ -32,20 +32,30 @@ class Health:
     contrast: list[float] = field(default_factory=list)
     blind_seconds: float = 0.0
     longest_gap: float = 0.0
+    covered_seconds: float = 0.0
 
     def saw_frame(self, since_last: float) -> None:
         """since_last is the step in the footage's own timeline, not in arrival
         time. HLS hands over a whole segment at once, so frames arrive in bursts
         with seconds of silence between them while missing nothing."""
         self.longest_gap = max(self.longest_gap, since_last)
+        self.covered_seconds += min(since_last, BLIND_AFTER)
         if since_last > BLIND_AFTER:
             self.blind_seconds += since_last - BLIND_AFTER
 
     def uptime(self, window: float) -> float:
-        """Share of the window the footage actually covers."""
+        """Share of the window the footage actually covers.
+
+        Counted forwards, from footage that arrived, rather than backwards from
+        the gaps between frames. A stream that dies mid-window leaves no gap to
+        find — there is no later frame to be far from the last one — so counting
+        backwards scored a window as 94% observed when the capture had timed out
+        after sixteen seconds of it and read nothing for the remaining fourteen
+        minutes. This is the check that exists to catch exactly that.
+        """
         if window <= 0 or self.frames == 0:
             return 0.0
-        return max(0.0, min(1.0, (window - self.blind_seconds) / window))
+        return max(0.0, min(1.0, self.covered_seconds / window))
 
     def visibility(self) -> float:
         if not self.contrast:

@@ -13,7 +13,8 @@ counts one car many times.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import time
+from datetime import UTC, datetime, timedelta
 
 from .capture import open_capture
 from .claims import Claim, Reading
@@ -48,6 +49,12 @@ SAMPLE_INTERVAL = 1.0 / SAMPLE_FPS
 # so the median covers a stretch of the window rather than one moment of it.
 SCENE_FRAMES = 9
 SCENE_EVERY = 40
+
+# How long without a frame before the capture is thrown away and opened again.
+# In seconds rather than in failed reads: a dead capture returns from read()
+# immediately, so a count is reached in microseconds and would throw away a
+# working stream over one segment arriving late.
+QUIET_BEFORE_REOPEN = 25.0
 
 
 def classes_for(target: str) -> list[int]:
@@ -141,6 +148,12 @@ class Crossings:
         seen = 0
         last_position: float | None = None
         last_sampled: float | None = None
+        clock = 0.0
+        # Every capture reports its own position from zero, so a reopened one
+        # would rewind the footage clock. This carries it forward, including the
+        # time the stream was down.
+        offset = 0.0
+        last_frame_at = started
         scene_frames: list = []
         chained = digest(f"{url}|{started.isoformat()}".encode())
         samples: list[dict] = []
@@ -151,14 +164,47 @@ class Crossings:
             ok, frame = capture.read()
             if not ok:
                 health.dropped += 1
+                # A capture that has stopped does not start again on its own: it
+                # times out once and then every read fails for the rest of the
+                # window. One did exactly that 302 seconds into a fifteen minute
+                # window and the observer sat spinning on the dead handle for the
+                # remaining fourteen minutes, counting nine crossings on a road
+                # that had several hundred.
+                quiet_for = (datetime.now(UTC) - last_frame_at).total_seconds()
+                if quiet_for < QUIET_BEFORE_REOPEN:
+                    # A failed read returns at once, so without this the wait for
+                    # a late segment is spent at full tilt on the processor.
+                    time.sleep(0.2)
+                    continue
+                capture.release()
+                capture = open_capture(url)
+                if not capture.isOpened():
+                    if datetime.now(UTC).timestamp() >= deadline:
+                        break
+                    last_frame_at = datetime.now(UTC)
+                    continue
+                # Live footage moved on while nothing was arriving, so the clock
+                # skips forward over what was missed and uptime takes the loss.
+                # Measured from the last frame that arrived, not from the moment
+                # the outage was declared: the quiet spell before that is missed
+                # footage too.
+                outage = (datetime.now(UTC) - last_frame_at).total_seconds()
+                offset = (last_position or 0.0) + outage
+                last_position = None
+                last_sampled = None
+                last_frame_at = datetime.now(UTC)
                 continue
+            last_frame_at = datetime.now(UTC)
             frames += 1
 
             # Gaps in the footage, not in arrival: HLS hands over a segment at a
             # time, so frames burst with silence between while missing nothing.
-            position = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            position = offset + capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
             if position > 0 and last_position is not None:
                 health.saw_frame(max(0.0, position - last_position))
+            elif offset > 0 and last_position is None:
+                # First frame back after an outage: the gap is what was missed.
+                health.saw_frame(max(0.0, position - clock))
             if position > 0:
                 last_position = position
             health.frames += 1
@@ -201,7 +247,18 @@ class Crossings:
             if boxes is None or boxes.id is None:
                 continue
 
-            now = datetime.now(UTC)
+            # Footage time, not arrival time. A track goes stale after five
+            # seconds without a sample, and on a live stream an observer that has
+            # caught up to the live edge blocks in read() waiting for the next
+            # segment — so tracks were being reset mid-crossing by nothing worse
+            # than the observer being fast. The faster model waited more and lost
+            # more crossings: on the same windows it came in 28 to 38 percent
+            # below the slower one, while on a recorded clip, where nothing ever
+            # blocks, the two agree to within 3 percent.
+            # Monotonic: a live playlist can restart its position, and the
+            # counter refuses samples that go backwards in time.
+            clock = max(clock, position)
+            now = started + timedelta(seconds=clock)
             height, width = frame.shape[:2]
             for (x, y, _, _), track_id, score in zip(
                 boxes.xywh.tolist(), boxes.id.tolist(), boxes.conf.tolist()

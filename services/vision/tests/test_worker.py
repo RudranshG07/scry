@@ -474,7 +474,8 @@ class CameraTest(unittest.TestCase):
     def test_a_relay_that_is_not_serving_does_not_blind_the_observer(self):
         with mock.patch("scry_vision.worker.serving", return_value=False), \
              mock.patch("scry_vision.probe.resolve", return_value="https://cdn/live.m3u8") as resolve:
-            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888")
+            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888",
+                              patience=0)
         self.assertEqual(got, "https://cdn/live.m3u8")
         resolve.assert_called_once()
 
@@ -488,6 +489,25 @@ class CameraTest(unittest.TestCase):
 
     def test_nothing_to_watch_reports_nothing_rather_than_guessing(self):
         self.assertIsNone(live_camera("stream-x", None, None))
+
+    def test_it_waits_for_a_relay_that_is_still_starting(self):
+        """The relay starts its ingest on the first request, so the first ask
+        always fails. Taking that as final sent both observers off to run yt-dlp
+        themselves, 254 seconds past the boundary of the window they were in
+        position for."""
+        answers = iter([False, False, True])
+        with mock.patch("scry_vision.worker.serving", side_effect=lambda _: next(answers)), \
+             mock.patch("scry_vision.worker.time.sleep"):
+            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888")
+        self.assertEqual(got, "http://relay:8888/stream-x/index.m3u8")
+
+    def test_it_gives_up_on_a_relay_that_never_starts(self):
+        with mock.patch("scry_vision.worker.serving", return_value=False), \
+             mock.patch("scry_vision.probe.resolve", return_value="https://cdn/live.m3u8"), \
+             mock.patch("scry_vision.worker.time.sleep"):
+            got = live_camera("stream-x", "https://youtube.com/watch?v=a", "http://relay:8888",
+                              patience=0.2)
+        self.assertEqual(got, "https://cdn/live.m3u8")
 
 
 class SubmissionTest(unittest.TestCase):
@@ -727,3 +747,35 @@ class SubmittedPayloadTest(unittest.TestCase):
         missing = self.REQUIRED - set(sent)
         self.assertEqual(missing, set(), f"submit() dropped {missing}")
         self.assertEqual(sent["sceneHash"], "d12625216a763f6d")
+
+
+class TakesWhateverIsDue(unittest.TestCase):
+    """Unpinned, an observer works a queue rather than attending one camera."""
+
+    def window(self, stream, market_id, starts):
+        return {"id": market_id, "streamId": stream, "status": "Scheduled",
+                "observationStartsAt": starts, "observationEndsAt": starts}
+
+    def test_it_takes_the_soonest_window_on_any_stream(self):
+        markets = [
+            self.window("stream-b", "b-1", "2026-08-17T20:10:00Z"),
+            self.window("stream-a", "a-1", "2026-08-17T19:50:00Z"),
+        ]
+        self.assertEqual(pick(markets, None, None)["id"], "a-1")
+
+    def test_it_leaves_streams_it_cannot_reach(self):
+        markets = [
+            self.window("stream-a", "a-1", "2026-08-17T19:50:00Z"),
+            self.window("stream-b", "b-1", "2026-08-17T20:10:00Z"),
+        ]
+        # Claiming the soonest window and then finding no camera for it means
+        # sitting out a window nobody else was going to cover either.
+        self.assertEqual(pick(markets, None, None, {"stream-b"})["id"], "b-1")
+        self.assertIsNone(pick(markets, None, None, set()))
+
+    def test_pinning_still_wins(self):
+        markets = [
+            self.window("stream-a", "a-1", "2026-08-17T19:50:00Z"),
+            self.window("stream-b", "b-1", "2026-08-17T20:10:00Z"),
+        ]
+        self.assertEqual(pick(markets, "stream-b", None)["id"], "b-1")

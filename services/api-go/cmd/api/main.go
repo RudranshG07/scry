@@ -34,7 +34,7 @@ func main() {
 
 		engineCtx, stopEngine := context.WithCancel(context.Background())
 		defer stopEngine()
-		go engine.New(postgres.Pool(), slog.Default()).Run(engineCtx)
+		go engine.New(postgres.Pool(), slog.Default(), settings.ObserverPairs).Run(engineCtx)
 	} else {
 		// There is no fallback store. There used to be one serving invented
 		// markets indistinguishable from real ones over the API, which cost

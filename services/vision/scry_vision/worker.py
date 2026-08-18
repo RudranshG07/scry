@@ -1,4 +1,11 @@
-"""Runs an observer against the market scheduled on one stream."""
+"""Runs an observer against whichever market is next due.
+
+An observer used to be pinned to one stream with --stream. The scheduler opens a
+window on every qualified stream, so two observers pinned to one camera left the
+rest of them with nobody counting: three streams ran for days, every window
+expiring Invalid with no reports at all, while the pair watched the fourth. An
+observer is a worker on a queue, not a camera's attendant.
+"""
 
 from __future__ import annotations
 
@@ -53,20 +60,31 @@ def get(url: str) -> object:
 WATCHABLE = ("Scheduled", "Open", "Locked", "Observing")
 
 
-def pick(markets: list[dict], stream: str, market_id: str | None) -> dict | None:
+def pick(markets: list[dict], stream: str | None, market_id: str | None,
+         watchable: set[str] | None = None) -> dict | None:
+    """The next window this observer should be counting.
+
+    Soonest first, so an observer free right now takes the window that opens
+    next rather than whichever the API happened to list first.
+    """
+    due = []
     for market in markets:
         if market["status"] not in WATCHABLE:
             continue
-        if market["streamId"] != stream:
+        if stream and market["streamId"] != stream:
             continue
         if market_id and market["id"] != market_id:
             continue
-        return market
-    return None
+        if watchable is not None and market["streamId"] not in watchable:
+            continue
+        due.append(market)
+    if not due:
+        return None
+    return min(due, key=lambda market: market.get("observationStartsAt") or "")
 
 
-def guard(market: dict, stream: str) -> None:
-    if market["streamId"] != stream:
+def guard(market: dict, stream: str | None) -> None:
+    if stream and market["streamId"] != stream:
         raise StreamMismatch(
             f"market {market['id']} is on {market['streamId']}, this observer watches {stream}")
 
@@ -87,12 +105,54 @@ def serving(playlist: str, timeout: float = 4.0) -> bool:
         return False
 
 
-def live_camera(stream: str, source: str | None, relay: str | None) -> str | None:
+# How long to let the relay come up before giving up on it. The relay starts its
+# ingest on the first request and closes it again five minutes after the last
+# reader leaves, so with windows running back to back it is cold at the start of
+# every one of them. Asking once and taking the answer as final sent both
+# observers off to run yt-dlp themselves, which took 254 seconds and cost the
+# window they were sitting in position for. Waiting is the cheaper end of that
+# trade by minutes, and it is one resolution shared by both rather than two.
+RELAY_PATIENCE = 150.0
+RELAY_RETRY = 5.0
+
+
+def relay_ready(playlist: str, patience: float = RELAY_PATIENCE) -> bool:
+    """Wake the relay's ingest and wait for it to have footage."""
+    deadline = time.monotonic() + patience
+    announced = False
+    while True:
+        if serving(playlist):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        if not announced:
+            announced = True
+            print(f"waiting for the relay to start {playlist}", flush=True)
+        time.sleep(RELAY_RETRY)
+
+
+def sources_from(api: str) -> dict[str, str]:
+    """Where each stream can be watched, by stream id.
+
+    Read every pass rather than once at startup: streams are submitted while the
+    observer is running, and a signed source is replaced when a channel restarts.
+    """
+    try:
+        streams = get(f"{api.rstrip('/')}/v1/streams")
+    except Exception as error:
+        print(f"could not list streams: {error}", file=sys.stderr, flush=True)
+        return {}
+    return {s["id"]: s["sourceUrl"] for s in streams if s.get("sourceUrl")}
+
+
+def live_camera(stream: str, source: str | None, relay: str | None,
+                patience: float = RELAY_PATIENCE) -> str | None:
     """A playlist url good right now, preferring the shared relay."""
     if relay:
         relayed = f"{relay.rstrip('/')}/{stream}/index.m3u8"
-        if serving(relayed):
+        if relay_ready(relayed, patience):
             return relayed
+        print(f"the relay never started {stream}, resolving the source directly", flush=True)
     if source:
         from .probe import resolve
 
@@ -147,20 +207,25 @@ def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
     return starts, min(ends, starts + timedelta(seconds=cap))
 
 
-def run(api: str, stream: str, camera: str, market_id: str | None, observer: str,
-        role: str, cap: float, poll: float, source: str | None = None,
+def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
+        observer: str, role: str, cap: float, poll: float, source: str | None = None,
         relay: str | None = None) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
     import scry_vision  # noqa: F401  registers the observers
     from .claims import Claim, observer_for
     from .observer import submit
 
-    print(f"watching {stream} as {role}", flush=True)
+    print(f"observing {stream or 'any stream'} as {role}", flush=True)
     done: set[str] = set()
     warmed: str | None = None
     ready: str | None = None
 
     while True:
+        # A pass round this loop is a few API calls and a sleep. When one takes
+        # minutes the observer misses the window it was sitting in position for,
+        # and the log says only that it arrived late — so time the pass and name
+        # what was slow rather than leaving it to be guessed at again.
+        pass_started = time.monotonic()
         try:
             markets = get(f"{api.rstrip('/')}/v1/markets")
         except Exception as error:  # a restarting API should not kill the observer
@@ -168,11 +233,23 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             time.sleep(poll)
             continue
 
-        market = pick(markets, stream, market_id)
+        # Only take on a stream this observer can actually reach. Without the
+        # source list it would pick the soonest window, find no camera for it,
+        # and sit out the window it had claimed.
+        sources = {stream: source} if stream and source else sources_from(api)
+        market = pick(markets, stream, market_id,
+                      None if camera else set(sources) | ({stream} if stream else set()))
         if market is None:
-            print(f"no window open on {stream}, waiting", flush=True)
+            print(f"no window open on {stream or 'any stream'}, waiting", flush=True)
             time.sleep(poll)
             continue
+
+        watching_stream = market["streamId"]
+        watching_source = sources.get(watching_stream, source)
+
+        stalled = time.monotonic() - pass_started
+        if stalled > 30:
+            print(f"that pass took {stalled:.0f}s before any counting started", flush=True)
 
         guard(market, stream)
 
@@ -190,7 +267,8 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
             # had been sitting in position for.
             if waiting < WARM_UP and warmed != market["id"]:
                 warmed = market["id"]
-                ready = live_camera(stream, source, relay) if (source or relay) else camera
+                ready = (live_camera(watching_stream, watching_source, relay)
+                         if (watching_source or relay) else camera)
                 # Resolution is not free, so the clock is read again rather than
                 # trusting the number from before it.
                 waiting = (opens - datetime.now(UTC)).total_seconds()
@@ -241,12 +319,16 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
         # arriving, every report came back with a count of zero and no uptime,
         # and every market it touched invalidated with nothing saying why.
         watching = ready if warmed == market["id"] and ready else camera
-        if watching is camera and (source or relay):
-            watching = live_camera(stream, source, relay) or camera
+        if watching is camera and (watching_source or relay):
+            watching = live_camera(watching_stream, watching_source, relay) or camera
+        if not watching:
+            print(f"nowhere to watch {watching_stream}, skipping {market['id']}", flush=True)
+            done.add(market["id"])
+            continue
 
         left = (closes - now).total_seconds()
-        print(f"observing {market['id']} on {stream} for {left:.0f}s as {role}", flush=True)
-        claim = claim_of(market, stream)
+        print(f"observing {market['id']} on {watching_stream} for {left:.0f}s as {role}", flush=True)
+        claim = claim_of(market, watching_stream)
         watcher = observer_for(claim)
         if watcher is None:
             # Nothing here can count this, and guessing with the nearest
@@ -281,8 +363,8 @@ def run(api: str, stream: str, camera: str, market_id: str | None, observer: str
 def main() -> int:
     parser = argparse.ArgumentParser(prog="scry-observer")
     parser.add_argument("--api", default="http://127.0.0.1:8080")
-    parser.add_argument("--stream", required=True,
-                        help="stream id this camera belongs to; markets on any other stream are ignored")
+    parser.add_argument("--stream",
+                        help="pin to one stream; by default the next window on any stream is taken")
     parser.add_argument("--camera", help="HLS url to watch; omit when using --relay")
     parser.add_argument("--youtube", help="live watch page; its playlist is signed and expires")
     parser.add_argument("--relay", help="shared ingest origin, so observers read identical frames")
@@ -301,6 +383,18 @@ def main() -> int:
         camera = resolve(args.youtube)
         if not camera:
             parser.error(f"could not resolve a live playlist from {args.youtube}")
+
+    # Unpinned, there is nothing to resolve up front: which camera to watch is
+    # not known until a window is claimed, and it is looked up then.
+    if not args.stream:
+        if args.camera or args.youtube:
+            parser.error("--camera and --youtube name one camera, so they need --stream")
+        try:
+            return run(args.api, None, None, args.market, args.observer,
+                       args.role, args.max_seconds, args.poll, relay=args.relay)
+        except StreamMismatch as error:
+            print(f"refusing to report: {error}", file=sys.stderr)
+            return 2
 
     # The relay is preferred, not imposed. Two observers reading it get identical
     # frames, which keeps any disagreement in the detector rather than in which

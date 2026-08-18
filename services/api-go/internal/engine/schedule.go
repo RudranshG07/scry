@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -146,9 +147,39 @@ func (e *Engine) schedule(ctx context.Context) error {
 	return nil
 }
 
+// busyUntil is when a new observation window could start without more of them
+// running at once than there are observers to count them. Nil means now.
+//
+// Observers are a shared pool, not one pair per camera. Opening a window on
+// every qualified stream at the same moment gave three of the four streams here
+// no observer at all: every window they ran expired Invalid with not one report
+// filed against it, for days, while the pair that exists counted the fourth.
+func (e *Engine) busyUntil(ctx context.Context) (time.Time, error) {
+	var ends time.Time
+	err := e.pool.QueryRow(ctx, `
+		SELECT observation_ends_at FROM markets
+		WHERE status IN ('Scheduled', 'Open', 'Locked', 'Observing')
+		ORDER BY observation_ends_at DESC
+		OFFSET $1 LIMIT 1`, e.pairs-1).Scan(&ends)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	return ends, err
+}
+
 func (e *Engine) create(ctx context.Context, p streamPlan) error {
-	opens := time.Now().UTC().Add(restBetweenMarkets).Truncate(time.Second)
-	locks := opens.Add(openWindow)
+	busy, err := e.busyUntil(ctx)
+	if err != nil {
+		return fmt.Errorf("find free observers: %w", err)
+	}
+
+	// Betting may overlap freely; only the counting is rationed. So the window
+	// is placed from its observation start backwards.
+	locks := time.Now().UTC().Add(restBetweenMarkets + openWindow).Truncate(time.Second)
+	if queued := busy.Add(restBetweenMarkets); queued.After(locks) {
+		locks = queued.Truncate(time.Second)
+	}
+	opens := locks.Add(-openWindow)
 	ends := locks.Add(observeWindow)
 
 	id := fmt.Sprintf("%s-%d", p.id, opens.Unix())

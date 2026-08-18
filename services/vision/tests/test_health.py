@@ -66,7 +66,8 @@ class UptimeTest(unittest.TestCase):
             for _ in range(150):
                 h.saw_frame(1 / 30)
                 h.frames += 1
-        self.assertEqual(h.uptime(90), 1.0)
+        # Summed forwards over 2700 steps, so exactly rather than about.
+        self.assertAlmostEqual(h.uptime(90), 1.0, places=6)
 
     def test_short_stalls_are_tolerated_as_ordinary_jitter(self):
         h = self.steady(900, 13.4)
@@ -90,3 +91,30 @@ class UptimeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UptimeSeesAStreamThatStops(unittest.TestCase):
+    def test_a_capture_that_dies_mid_window_is_not_fully_observed(self):
+        health = Health()
+        health.frames = 480
+        # Sixteen seconds of footage arrive, then the capture times out and the
+        # remaining fourteen minutes produce no frames at all — and so no gaps.
+        for _ in range(480):
+            health.saw_frame(1 / 30)
+        self.assertLess(health.uptime(900), 0.05)
+
+    def test_a_healthy_window_still_reports_full_uptime(self):
+        health = Health()
+        health.frames = 27000
+        for _ in range(27000):
+            health.saw_frame(1 / 30)
+        self.assertGreater(health.uptime(900), 0.99)
+
+    def test_gaps_in_the_footage_still_come_off_the_top(self):
+        health = Health()
+        health.frames = 2
+        health.saw_frame(450.0)
+        health.saw_frame(450.0)
+        # Two jumps of seven minutes cover one second each, not the whole window.
+        self.assertLess(health.uptime(900), 0.01)
+        self.assertGreater(health.blind_seconds, 800)
