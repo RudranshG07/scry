@@ -70,7 +70,11 @@ def _average(samples: list[int]) -> float:
     return statistics.fmean(samples) if samples else 0.0
 
 
-OBSERVATION_WINDOW = 15 * 60
+# Must match observeWindow in services/api-go/internal/engine/schedule.go. The
+# threshold a market turns on is measured over a short sample and scaled up to
+# this, so if the two disagree every market settles the same way regardless of
+# what crossed: a bar set for fifteen minutes cannot be met in four.
+OBSERVATION_WINDOW = 4 * 60
 
 
 def inspect(url: str, seconds: float = 45, claim: dict | None = None,

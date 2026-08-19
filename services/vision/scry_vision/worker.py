@@ -372,7 +372,7 @@ def main() -> int:
     parser.add_argument("--observer", default="vision-01")
     parser.add_argument("--role", default="primary_vision",
                         choices=["edge", "primary_vision", "verification"])
-    parser.add_argument("--max-seconds", type=float, default=900,
+    parser.add_argument("--max-seconds", type=float, default=240,
                         help="safety bound on one observation; covers a whole window")
     parser.add_argument("--poll", type=float, default=15)
     args = parser.parse_args()

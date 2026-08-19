@@ -70,3 +70,21 @@ test("observation commitment projects through the finalized event boundary", () 
   assert.equal(market.winningOutcomeId, "yes");
   assert.equal(market.evidenceRoot, observation.commitment.evidenceRoot);
 });
+
+test("the observation window is the same length in Go and in Python", () => {
+  // The threshold a market turns on is measured over a short sample and scaled
+  // up to a whole window. The scheduler decides how long that window is; the
+  // qualifier decides what number it takes to win. If the two disagree, every
+  // market settles the same way whatever crossed the line — a bar set for
+  // fifteen minutes cannot be met in four — and nothing in either service is
+  // wrong on its own, so nothing reports it.
+  const schedule = readFileSync("services/api-go/internal/engine/schedule.go", "utf8");
+  const qualify = readFileSync("services/vision/scry_vision/qualify.py", "utf8");
+
+  const go = schedule.match(/observeWindow\s*=\s*(\d+)\s*\*\s*time\.Minute/);
+  const python = qualify.match(/OBSERVATION_WINDOW\s*=\s*(\d+)\s*\*\s*60/);
+
+  assert.ok(go, "schedule.go no longer declares observeWindow in minutes");
+  assert.ok(python, "qualify.py no longer declares OBSERVATION_WINDOW in minutes");
+  assert.equal(Number(python[1]), Number(go[1]));
+});

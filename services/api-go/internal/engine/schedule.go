@@ -20,7 +20,13 @@ const (
 	// mid-window when a user arrives.
 	restBetweenMarkets = 2 * time.Minute
 	openWindow         = 8 * time.Minute
-	observeWindow      = 15 * time.Minute
+	// Four minutes, not fifteen. Almost everything that spoils a window is a
+	// function of how long the window is: a capture that timed out 302 seconds
+	// in, a camera that panned away from the line it was qualified on, an
+	// observer that lost coverage joining late. None of those can happen inside
+	// four minutes, and a market needs both observers to get through cleanly, so
+	// the exposure was being paid for twice.
+	observeWindow = 4 * time.Minute
 )
 
 type streamPlan struct {
