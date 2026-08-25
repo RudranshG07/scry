@@ -88,3 +88,59 @@ test("the observation window is the same length in Go and in Python", () => {
   assert.ok(python, "qualify.py no longer declares OBSERVATION_WINDOW in minutes");
   assert.equal(Number(python[1]), Number(go[1]));
 });
+
+test("the relay publishes at the cadence the observers count at", () => {
+  // The relay drops the stream to the sampling rate so the observers do not
+  // decode thirty frames a second to look at eight. That makes its frame rate
+  // the counting cadence: serve less than SAMPLE_FPS and no observer can reach
+  // the rate its thresholds were calibrated at, and every market on that camera
+  // settles low without one line of either service being wrong.
+  const ingest = readFileSync("infrastructure/relay/ingest.sh", "utf8");
+  const crossings = readFileSync("services/vision/scry_vision/crossings.py", "utf8");
+
+  const relay = ingest.match(/SCRY_RELAY_FPS:-(\d+(?:\.\d+)?)\}/);
+  const sample = crossings.match(/SAMPLE_FPS\s*=\s*(\d+(?:\.\d+)?)/);
+
+  assert.ok(relay, "ingest.sh no longer defaults SCRY_RELAY_FPS");
+  assert.ok(sample, "crossings.py no longer declares SAMPLE_FPS");
+  assert.equal(Number(relay[1]), Number(sample[1]));
+});
+
+test("the cadence tolerance leaves a thirty frame source sampled as before", () => {
+  // The tolerance exists so a source arriving at exactly the sampling rate is
+  // not thrown away by the check meant to enforce it. It must not also change
+  // what a thirty frame source does: at that rate a frame lands every 33ms, and
+  // slack of 25ms or more starts taking every third one instead of every
+  // fourth, which is a 25% cadence change and silently invalidates every
+  // threshold stored against it.
+  const crossings = readFileSync("services/vision/scry_vision/crossings.py", "utf8");
+  const slack = crossings.match(/CADENCE_SLACK\s*=\s*([\d.]+)/);
+  const sample = crossings.match(/SAMPLE_FPS\s*=\s*(\d+(?:\.\d+)?)/);
+
+  assert.ok(slack, "crossings.py no longer declares CADENCE_SLACK");
+  const interval = 1 / Number(sample[1]);
+  const threshold = interval - Number(slack[1]);
+
+  const kept = (fps) => {
+    for (let n = 1; n < 100; n += 1) if (n / fps >= threshold) return n;
+    throw new Error("never samples");
+  };
+  assert.equal(kept(30), 4);
+  assert.ok(threshold < interval, "the tolerance must leave room for jitter");
+});
+
+test("the scene drift budget is the same in Go and in Python", () => {
+  // The qualifier records what the camera was looking at and the API refuses a
+  // count taken on a scene too far from it. Two numbers, two languages, one
+  // decision: raise one and markets void on cameras that never moved, raise the
+  // other and a camera that panned off the count line keeps settling markets.
+  const scene = readFileSync("services/api-go/internal/httpapi/scene.go", "utf8");
+  const python = readFileSync("services/vision/scry_vision/scene.py", "utf8");
+
+  const go = scene.match(/maxSceneDrift\s*=\s*(\d+)/);
+  const py = python.match(/MAX_DRIFT\s*=\s*(\d+)/);
+
+  assert.ok(go, "scene.go no longer declares maxSceneDrift");
+  assert.ok(py, "scene.py no longer declares MAX_DRIFT");
+  assert.equal(Number(py[1]), Number(go[1]));
+});

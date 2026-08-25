@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from .capture import open_capture
 from .claims import Claim, Reading
 from .counter import CountLineTracker
-from .detector import MODELS, _load
+from .detector import MODELS, _load, accelerator
 from .evidence import bundle, chain, digest, stamp
 from .health import Health
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
@@ -44,6 +44,20 @@ WIDTH, HEIGHT = 1280, 720
 # across the line at ordinary speeds.
 SAMPLE_FPS = 8.0
 SAMPLE_INTERVAL = 1.0 / SAMPLE_FPS
+
+# Tolerance on that interval, so a source already arriving at the sampling rate
+# is not decimated by it. The relay publishes at SAMPLE_FPS, which puts its
+# frames exactly one interval apart in theory and a millisecond either side of
+# it in practice; without this, the ones landing marginally early are discarded
+# and the next accepted frame is two intervals away, so the cadence collapses to
+# four a second in bursts. That is not a small error — the same clip counts 80 at
+# eight frames a second and 42 at four.
+#
+# Twenty milliseconds because it has to leave a thirty frame source counting
+# exactly what it counted before: at that rate a frame arrives every 33ms, so
+# anything under 25ms of slack still takes every fourth one. Every threshold in
+# the database is calibrated against that.
+CADENCE_SLACK = 0.02
 
 # Frames kept for the scene fingerprint, and how often one is taken. Spread out
 # so the median covers a stretch of the window rather than one moment of it.
@@ -215,7 +229,8 @@ class Crossings:
             # crossings: the faster model simply read 25% more frames, so its
             # tracker saw more of every trajectory. Left alone, the result of a
             # market depends on the hardware counting it.
-            if last_sampled is not None and position > 0 and position - last_sampled < SAMPLE_INTERVAL:
+            if (last_sampled is not None and position > 0
+                    and position - last_sampled < SAMPLE_INTERVAL - CADENCE_SLACK):
                 continue
             if position > 0:
                 last_sampled = position
@@ -241,6 +256,7 @@ class Crossings:
                 tracker="bytetrack.yaml",
                 persist=True,
                 verbose=False,
+                device=accelerator(),
             )[0]
 
             boxes = result.boxes

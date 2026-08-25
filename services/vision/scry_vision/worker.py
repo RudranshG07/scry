@@ -16,6 +16,8 @@ import time
 import urllib.request
 from datetime import UTC, datetime, timedelta
 
+from .health import MIN_UPTIME
+
 
 class StreamMismatch(Exception):
     """The market is not on the stream this observer watches."""
@@ -25,7 +27,19 @@ JOIN_GRACE = 20
 
 # Below this share of a window there is nothing worth reporting: the resolver's
 # uptime floor would refuse it anyway, and counting it costs a whole window.
-WORTH_COUNTING = 0.90
+#
+# Which makes it that floor, not a number of its own. A late join is folded into
+# the report by scaling uptime by the share covered, so a window joined at 0.94
+# cannot report above 0.94 however clean the footage is, and comes back tagged
+# uptime_below_minimum. At 0.90 this bar was looser than the floor it is
+# anticipating and let through windows that were counted in full, submitted, and
+# discarded on arrival — a whole window of work for a report that could not
+# count before it was taken.
+#
+# Nothing is gained by loosening it either: below the floor the choice is
+# between no report and a report that is thrown away, and both invalidate the
+# market. Coverage is not what is stopping markets settling here.
+WORTH_COUNTING = MIN_UPTIME
 
 # How long before a window opens the observer resolves its playlist, so the
 # seconds that matter are spent counting rather than talking to yt-dlp.

@@ -46,6 +46,36 @@ VERIFY = Model(name="verify", weights="yolov8n.pt", confidence=0.25, iou=0.7)
 MODELS = {"primary_vision": PRIMARY, "verification": VERIFY, "edge": VERIFY}
 
 
+@lru_cache(maxsize=1)
+def accelerator() -> str:
+    """Where inference runs.
+
+    On the processor a counting pass could not keep up with the cadence it
+    samples at: yolov8s managed 3.5 frames a second against the 8 it must
+    reach, so it saw less than half the footage and counted proportionally
+    less — 52 crossings where the same clip holds 80. Nothing reported this,
+    because a count taken too slowly looks exactly like a quiet road.
+
+    The same weights on the graphics processor run at 12 a second, which
+    clears the cadence with room to spare.
+    """
+    import os
+
+    chosen = os.environ.get("SCRY_VISION_DEVICE", "").strip()
+    if chosen:
+        return chosen
+    try:
+        import torch
+
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
 @lru_cache(maxsize=4)
 def _load(weights: str):
     from ultralytics import YOLO
@@ -79,6 +109,7 @@ class Counter:
             tracker="bytetrack.yaml",
             persist=True,
             verbose=False,
+            device=accelerator(),
         )[0]
 
         boxes = result.boxes

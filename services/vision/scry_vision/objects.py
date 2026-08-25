@@ -11,7 +11,7 @@ import statistics
 from .capture import open_capture
 from .claims import Claim, Reading
 from .crossings import COUNTABLE
-from .detector import MODELS, _load
+from .detector import MODELS, _load, accelerator
 from .evidence import bundle, chain, digest, stamp
 from .health import Health
 
@@ -74,7 +74,8 @@ class Objects:
                 continue
             chained = chain(chained, frame.tobytes())
             result = yolo.predict(frame, imgsz=640, conf=model.confidence,
-                                  iou=model.iou, classes=classes, verbose=False)[0]
+                                  iou=model.iou, classes=classes, verbose=False,
+                                  device=accelerator())[0]
             counts.append(0 if result.boxes is None else len(result.boxes))
         capture.release()
 
