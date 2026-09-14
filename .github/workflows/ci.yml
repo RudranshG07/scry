@@ -40,7 +40,7 @@ jobs:
       - run: npm run test:forecasting
       - run: npm run test:operations
       - run: npm run test:qualification
-      - run: python -m venv services/vision/.venv && services/vision/.venv/bin/pip install numpy opencv-python-headless
+      - run: python -m venv services/vision/.venv && services/vision/.venv/bin/pip install numpy opencv-python-headless eth-keys "eth-hash[pycryptodome]"
       - run: npm run test:vision
       - run: npm run test:curation
       - run: npm run test:reputation

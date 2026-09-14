@@ -64,7 +64,7 @@ async function viaYtDlp(source: string): Promise<string | null> {
     }
   }
 
-  const direct = await run("yt-dlp", [...credentials(), "-g", "-f", "best[protocol^=m3u8]/best", "--no-warnings", source]);
+  const direct = await run("yt-dlp", [...credentials(), "-g", "-f", "b*[protocol^=m3u8]/best", "--no-warnings", source]);
   return direct?.split("\n").find((line) => line.startsWith("http")) ?? null;
 }
 

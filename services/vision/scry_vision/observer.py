@@ -8,6 +8,7 @@ from __future__ import annotations
 from .capture import open_capture
 
 import json
+import os
 import statistics
 import time
 import urllib.request
@@ -23,6 +24,7 @@ from .evidence import bundle, chain, digest, stamp
 from .health import Health, faults
 from .occupancy import occupancy_for
 from .models import CountLine, CounterConfig, CrossingDirection, Point, TrackSample
+from .signing import sign_report
 
 MAX_DRIFT = 70
 MAX_MISSES = 8
@@ -250,7 +252,9 @@ def submit(api: str, market: str, observer: str, role: str, result: dict) -> tup
 
     request = urllib.request.Request(
         f"{api.rstrip('/')}/v1/markets/{market}/observations",
-        data=body, headers={"Content-Type": "application/json"}, method="POST")
+        data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "X-Scry-Signature": sign_report(os.environ["SCRY_OBSERVER_KEY"], market, body)})
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.status, response.read().decode()

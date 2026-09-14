@@ -720,14 +720,10 @@ class SubmittedPayloadTest(unittest.TestCase):
         "averageVisibility", "invalidReasons", "evidenceRoot", "sceneHash", "counts",
     }
 
-    def test_the_body_carries_every_field_the_api_uses(self):
-        import json
+    def submitted(self, reading):
         from scry_vision.observer import submit
+        from test_signing import KEY
 
-        reading = Reading(count=42, samples=[{"streamQuality": 1.0}], uptime=1.0,
-                          evidence_root="0xabc",
-                          detail={"frames": 900, "sceneHash": "d12625216a763f6d",
-                                  "model": "yolov8s"})
         sent = {}
 
         class Response:
@@ -737,16 +733,36 @@ class SubmittedPayloadTest(unittest.TestCase):
             def __exit__(self, *a): return False
 
         def capture(request, timeout=0):
-            sent.update(json.loads(request.data))
+            sent["body"] = request.data
+            sent["signature"] = request.get_header("X-scry-signature")
             return Response()
 
-        with mock.patch("urllib.request.urlopen", side_effect=capture):
+        with mock.patch("urllib.request.urlopen", side_effect=capture), \
+                mock.patch.dict("os.environ", {"SCRY_OBSERVER_KEY": KEY}):
             submit("http://api", "market-1", "vision-01", "primary_vision",
                    as_report(reading, 900))
+        return sent
+
+    def test_the_body_carries_every_field_the_api_uses(self):
+        import json
+
+        reading = Reading(count=42, samples=[{"streamQuality": 1.0}], uptime=1.0,
+                          evidence_root="0xabc",
+                          detail={"frames": 900, "sceneHash": "d12625216a763f6d",
+                                  "model": "yolov8s"})
+        sent = json.loads(self.submitted(reading)["body"])
 
         missing = self.REQUIRED - set(sent)
         self.assertEqual(missing, set(), f"submit() dropped {missing}")
         self.assertEqual(sent["sceneHash"], "d12625216a763f6d")
+
+    def test_the_report_is_signed_by_the_observer_for_its_market(self):
+        from test_signing import ADDRESS, signer
+
+        reading = Reading(count=42, samples=[{"streamQuality": 1.0}], uptime=1.0,
+                          evidence_root="0xabc", detail={"frames": 900, "model": "yolov8s"})
+        sent = self.submitted(reading)
+        self.assertEqual(signer("market-1", sent["body"], sent["signature"]), ADDRESS)
 
 
 class TakesWhateverIsDue(unittest.TestCase):

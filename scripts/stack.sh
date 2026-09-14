@@ -61,6 +61,11 @@ observers() {
     return 1
   fi
 
+  # The API refuses a report unless it is signed by the address SCRY_OBSERVERS
+  # registers for that observer, so each one needs its own key.
+  : "${SCRY_VISION_KEY:?set SCRY_VISION_KEY to the private key for vision-01}"
+  : "${SCRY_VERIFY_KEY:?set SCRY_VERIFY_KEY to the private key for verify-01}"
+
   # caffeinate wraps the command, so a pattern matching only the module misses
   # the wrapper and leaves the old observer alive. Duplicate readers then split
   # the stream between them and every one of them reports a starved window.
@@ -84,13 +89,13 @@ observers() {
       # --youtube as well as --relay: the relay is preferred when it is serving
       # this path and skipped when it is not, rather than blinding the observer.
       # shellcheck disable=SC2086
-      nohup $keepawake env PYTHONPATH=services/vision "$python" -m scry_vision.worker \
+      nohup $keepawake env PYTHONPATH=services/vision SCRY_OBSERVER_KEY="$3" "$python" -m scry_vision.worker \
         --stream "$stream" --youtube "$source" --relay "$RELAY" --api "$API" \
         --observer "$1" --role "$2" --poll 10 \
         > "$LOGS/obs-$stream-$1.log" 2>&1 < /dev/null &
     }
-    start_observer vision-01 primary_vision
-    start_observer verify-01 verification
+    start_observer vision-01 primary_vision "$SCRY_VISION_KEY"
+    start_observer verify-01 verification "$SCRY_VERIFY_KEY"
     say started "$stream (2 observers)"
   done <<< "$streams"
 }

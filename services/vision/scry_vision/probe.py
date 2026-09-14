@@ -45,9 +45,13 @@ def _credentials() -> list[str]:
     return ["--cookies-from-browser", setting]
 
 
+# This environment's yt-dlp, with node for YouTube's JavaScript challenges, not
+# whatever is on PATH. The Homebrew one was seven months old and every YouTube
+# playlist it resolved was refused 40 s in; 2026.08.19 with node held for 100 s.
 def _ytdlp(args: list[str]) -> str | None:
     try:
-        out = subprocess.run(["yt-dlp", "--no-update", *_credentials(), *args],
+        out = subprocess.run([sys.executable, "-m", "yt_dlp", "--no-update", "--js-runtimes", "node",
+                              *_credentials(), *args],
                              capture_output=True, text=True, timeout=90)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -133,7 +137,7 @@ def resolve(source: str) -> str | None:
         except (json.JSONDecodeError, KeyError):
             pass
 
-    direct = _ytdlp(["-g", "-f", "best[protocol^=m3u8][height<=720]/best[protocol^=m3u8]", source])
+    direct = _ytdlp(["-g", "-f", "b*[protocol^=m3u8][height<=720]/b*[protocol^=m3u8]", source])
     for line in (direct or "").splitlines():
         if line.startswith("http"):
             return line

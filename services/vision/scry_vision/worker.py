@@ -59,9 +59,10 @@ BOUNDARY_MARGIN = 3.0
 LONGEST_SLEEP = 60.0
 
 # Statuses that mean this window is over as far as the API is concerned: the
-# observation closed (409), the market is gone (404), or the report was rejected
-# on its own terms (422). None of them change if the same count is sent again.
-SETTLED_REFUSALS = frozenset({404, 409, 422})
+# observation closed (409), the market is gone (404), the report was rejected on
+# its own terms (422) or its signature was (401). None of them change if the
+# same count is sent again.
+SETTLED_REFUSALS = frozenset({401, 404, 409, 422})
 
 
 def get(url: str) -> object:
@@ -390,6 +391,13 @@ def main() -> int:
                         help="safety bound on one observation; covers a whole window")
     parser.add_argument("--poll", type=float, default=15)
     args = parser.parse_args()
+
+    import os
+
+    # Checked before anything is counted: the API refuses an unsigned report, and
+    # finding that out at submission throws away the whole window.
+    if not os.environ.get("SCRY_OBSERVER_KEY"):
+        parser.error("set SCRY_OBSERVER_KEY to this observer's private key")
 
     camera = args.camera
     if args.youtube:

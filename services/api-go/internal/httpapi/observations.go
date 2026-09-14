@@ -1,14 +1,19 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/RudranshG07/scry/services/api-go/internal/auth"
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
@@ -41,16 +46,28 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	request.Body = http.MaxBytesReader(writer, request.Body, maxReportBytes)
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxReportBytes))
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, "invalid_report", "Report body could not be read.")
+		return
+	}
 
 	var report domain.ObserverReport
-	decoder := json.NewDecoder(request.Body)
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&report); err != nil {
 		writeError(writer, http.StatusBadRequest, "invalid_report", "Report body is not valid JSON.")
 		return
 	}
 	report.MarketID = request.PathValue("id")
+
+	signature := request.Header.Get("X-Scry-Signature")
+	if !server.signedBy(report.ObserverID, report.MarketID, body, signature) {
+		writeError(writer, http.StatusUnauthorized, "report_not_signed",
+			"Reports must be signed by the key registered for their observer.")
+		return
+	}
+	report.Signature = &signature
 
 	if problem := validate(&report); problem != "" {
 		writeError(writer, http.StatusUnprocessableEntity, "invalid_report", problem)
@@ -68,7 +85,7 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	err := ingester.SaveReport(request.Context(), report)
+	err = ingester.SaveReport(request.Context(), report)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(writer, http.StatusNotFound, "market_not_found", "Market not found.")
@@ -93,6 +110,30 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusAccepted, map[string]string{"status": "accepted"})
+}
+
+func (server *Server) signedBy(observer, market string, body []byte, signature string) bool {
+	address, ok := server.observers[observer]
+	if !ok || signature == "" {
+		return false
+	}
+	signer, err := auth.Recover(observationMessage(market, body), signature)
+	return err == nil && strings.EqualFold(signer, address)
+}
+
+func observationMessage(market string, body []byte) string {
+	return fmt.Sprintf("scry-observation:%s:%x", market, sha256.Sum256(body))
+}
+
+func registeredObservers(configured string) map[string]string {
+	observers := map[string]string{}
+	for _, pair := range strings.Split(configured, ",") {
+		id, address, found := strings.Cut(strings.TrimSpace(pair), "=")
+		if found && id != "" && addressPattern.MatchString(address) {
+			observers[id] = address
+		}
+	}
+	return observers
 }
 
 func validate(r *domain.ObserverReport) string {

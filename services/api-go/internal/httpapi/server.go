@@ -32,6 +32,7 @@ type Server struct {
 	domain         string
 	secureCookies  bool
 	operatorToken  string
+	observers      map[string]string
 	log            *slog.Logger
 }
 
@@ -45,6 +46,7 @@ func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Se
 		domain:         hostOf(origins[0]),
 		secureCookies:  strings.HasPrefix(origins[0], "https://"),
 		operatorToken:  strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
+		observers:      registeredObservers(os.Getenv("SCRY_OBSERVERS")),
 		log:            slog.Default(),
 	}
 	server.routes()

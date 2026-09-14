@@ -26,9 +26,13 @@ if [ -z "${source_url}" ]; then
   exit 1
 fi
 
+# b*, not best. yt-dlp 2026.08 does not always list YouTube's muxed HLS formats,
+# and "best" then matches nothing, so the relay never started; b* takes a
+# video-only rendition too, and the ffmpeg below needs one video track and only
+# maps audio when there is some.
 case "${source_url}" in
   *.m3u8*) playlist="${source_url}" ;;
-  *)       playlist=$(yt-dlp -g -f 'best[protocol^=m3u8]/best' --no-warnings "${source_url}" | head -1) ;;
+  *)       playlist=$(yt-dlp --js-runtimes node -g -f 'b*[protocol^=m3u8]/b*' --no-warnings "${source_url}" | head -1) ;;
 esac
 
 if [ -z "${playlist}" ]; then

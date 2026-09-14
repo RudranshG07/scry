@@ -40,6 +40,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if os.Getenv("SCRY_OBSERVERS") == "" {
+		slog.Warn("SCRY_OBSERVERS is unset, so every observer report will be refused.")
+	}
+
 	server := &http.Server{
 		Addr:              settings.Address,
 		Handler:           httpapi.New(data, nil, settings.AllowedOrigin),
