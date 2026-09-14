@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LandingPage } from "@/components/landing-page";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Scry — Live reality, priced",

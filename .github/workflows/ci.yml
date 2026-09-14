@@ -27,7 +27,8 @@ jobs:
           python-version: "3.13"
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24.x"
+          go-version-file: services/api-go/go.mod
+          cache-dependency-path: services/api-go/go.sum
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
@@ -39,6 +40,7 @@ jobs:
       - run: npm run test:forecasting
       - run: npm run test:operations
       - run: npm run test:qualification
+      - run: python -m venv services/vision/.venv && services/vision/.venv/bin/pip install numpy opencv-python-headless
       - run: npm run test:vision
       - run: npm run test:curation
       - run: npm run test:reputation
@@ -49,3 +51,6 @@ jobs:
           SCRY_POSTGRES_PASSWORD: ci-only
       - run: npm audit --audit-level=moderate
       - run: npm run build
+        env:
+          NEXT_PUBLIC_SCRY_API_URL: http://127.0.0.1:8080
+          NEXT_PUBLIC_SCRY_WS_URL: ws://127.0.0.1:8080

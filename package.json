@@ -28,7 +28,7 @@
     "hls.js": "1.6.16",
     "livekit-client": "2.20.2",
     "lucide-react": "1.25.0",
-    "next": "16.2.10",
+    "next": "16.3.5",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
@@ -38,12 +38,12 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.3.5",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3"
   },
   "overrides": {
-    "postcss": "^8.5.10",
-    "sharp": "0.35.3"
+    "postcss": "^8.5.23",
+    "sharp": "0.35.4"
   }
 }

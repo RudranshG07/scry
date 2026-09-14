@@ -13,14 +13,14 @@ export async function LandingPage() {
     markets.find((market) => market.status === "Resolved") ??
     markets.find((market) => market.status === "Result proposed") ??
     markets[0];
-  const proof = await scryApi.getProof(proofMarket.id);
+  const proof = proofMarket ? await scryApi.getProof(proofMarket.id) : null;
 
   return (
     <div className="bg-[#0a0608]">
       <Hero liveCount={liveMarkets.length} streamCount={markets.length} />
       <QuoteSection />
       <LiveMarkets markets={markets} />
-      {proof && <ProofRecord market={proofMarket} proof={proof} />}
+      {proofMarket && proof && <ProofRecord market={proofMarket} proof={proof} />}
       <Closing liveCount={liveMarkets.length} />
     </div>
   );
