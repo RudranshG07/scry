@@ -8,9 +8,6 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-// Private key 0x…01 belongs to this address. Hard-coding the pair means the test
-// covers the whole pipeline — keccak, the personal_sign prefix, recovery and
-// address derivation — rather than just checking our own code round-trips.
 const (
 	knownAddress = "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"
 	domain       = "scry.markets"
@@ -24,7 +21,6 @@ func key(t *testing.T) *secp256k1.PrivateKey {
 	return secp256k1.PrivKeyFromBytes(b[:])
 }
 
-// sign produces what a wallet returns from personal_sign: r || s || v, v as 27/28.
 func sign(t *testing.T, message string) string {
 	t.Helper()
 	compact := ecdsa.SignCompact(key(t), hash(message), false)
@@ -54,8 +50,6 @@ func TestVerifyAcceptsAGenuineSignIn(t *testing.T) {
 }
 
 func TestSignatureForAnotherSiteIsRefused(t *testing.T) {
-	// A real signature, freely given somewhere else. Without the domain check it
-	// would sign the holder in here too.
 	elsewhere := Build("evil.example", knownAddress, nonce, "2026-07-31T06:00:00Z", "Sign in.")
 	if err := Verify(elsewhere, sign(t, elsewhere), domain, knownAddress, nonce); err != ErrWrongDomain {
 		t.Errorf("got %v, want ErrWrongDomain", err)
@@ -63,7 +57,6 @@ func TestSignatureForAnotherSiteIsRefused(t *testing.T) {
 }
 
 func TestSignatureCarryingAnotherNonceIsRefused(t *testing.T) {
-	// The signature is valid and for this site, but from an earlier sign-in.
 	old := Build(domain, knownAddress, "0000deadbeef", "2026-07-31T05:00:00Z", "Sign in to Scry.")
 	if err := Verify(old, sign(t, old), domain, knownAddress, nonce); err != ErrNonceMismatch {
 		t.Errorf("got %v, want ErrNonceMismatch", err)
@@ -81,7 +74,6 @@ func TestSigningForOneAddressDoesNotSignInAnother(t *testing.T) {
 func TestATamperedMessageDoesNotVerify(t *testing.T) {
 	m := message()
 	signature := sign(t, m)
-	// Same signature, message altered after the fact.
 	tampered := strings.Replace(m, "Sign in to Scry.", "Send everything to me.", 1)
 	if err := Verify(tampered, signature, domain, knownAddress, nonce); err == nil {
 		t.Error("a signature over different text was accepted")
@@ -106,8 +98,6 @@ func TestParseRejectsSomethingThatIsNotASignInMessage(t *testing.T) {
 }
 
 func TestTheSignedTextIsNotMistakenForATransaction(t *testing.T) {
-	// personal_sign prefixes the payload precisely so a signature gathered for
-	// a login cannot also be a valid signature over raw transaction bytes.
 	m := message()
 	if string(hash(m)) == string(keccak([]byte(m))) {
 		t.Error("message was hashed without the personal_sign prefix")

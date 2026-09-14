@@ -64,7 +64,6 @@ func readPosition(row pgx.CollectableRow) (domain.Position, error) {
 	return p, nil
 }
 
-// An invalid market refunds every side. A resolved one only pays the winner.
 func positionState(status, outcome string, won *string, claimed, refunded float64) string {
 	winner := won != nil && *won == outcome
 
@@ -83,7 +82,6 @@ func positionState(status, outcome string, won *string, claimed, refunded float6
 }
 
 func (s *Postgres) GetLeaderboard(ctx context.Context) ([]domain.LeaderboardEntry, error) {
-	// DISTINCT ON forces its own ORDER BY, so rank has to be applied outside.
 	rows, err := s.pool.Query(ctx, `
 		SELECT forecaster_id, forecaster_kind, category, rank, sample_count,
 		       brier_score, calibration_error

@@ -11,13 +11,12 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// Must stay identical to scry_vision/evidence.py or the roots will not agree.
+// must match scry_vision/evidence.py or the roots won't agree
 var (
 	leafPrefix = []byte{0x00}
 	nodePrefix = []byte{0x01}
 )
 
-// GetEvidence returns one observer's intervals with a proof for each.
 func (s *Postgres) GetEvidence(ctx context.Context, marketID, observerID string) (domain.EvidenceBundle, error) {
 	var b domain.EvidenceBundle
 	b.MarketID, b.ObserverID = marketID, observerID

@@ -31,11 +31,8 @@ type Server struct {
 	allowedOrigins []string
 	domain         string
 	secureCookies  bool
-	// Lets Scry post its own streams without a wallet. Unset means only signed-in
-	// people can submit, which is the right default: an empty token must never
-	// authenticate an empty header.
-	operatorToken string
-	log           *slog.Logger
+	operatorToken  string
+	log            *slog.Logger
 }
 
 func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Server {
@@ -45,14 +42,10 @@ func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Se
 		store:          data,
 		issuer:         issuer,
 		allowedOrigins: origins,
-		// The domain in a sign-in message has to be the site the user is actually
-		// on, or the check that a signature was meant for us proves nothing.
-		domain: hostOf(origins[0]),
-		// A session cookie sent in the clear is a session anyone on the path can
-		// take, but localhost has no certificate to offer.
-		secureCookies: strings.HasPrefix(origins[0], "https://"),
-		operatorToken: strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
-		log:           slog.Default(),
+		domain:         hostOf(origins[0]),
+		secureCookies:  strings.HasPrefix(origins[0], "https://"),
+		operatorToken:  strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
+		log:            slog.Default(),
 	}
 	server.routes()
 	return server
@@ -257,8 +250,6 @@ func writeError(writer http.ResponseWriter, status int, code string, message str
 	writeJSON(writer, status, map[string]string{"code": code, "error": message})
 }
 
-// hostOf strips scheme and port so the sign-in domain matches what a wallet
-// shows the user.
 func hostOf(origin string) string {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
 	if host, _, found := strings.Cut(trimmed, ":"); found {
@@ -267,9 +258,6 @@ func hostOf(origin string) string {
 	return trimmed
 }
 
-// splitOrigins accepts a comma-separated list. Browsers treat http://localhost
-// and http://127.0.0.1 as different origins, so a dev setup that names only one
-// blocks the other with a CORS error that looks like the API being down.
 func splitOrigins(configured string) []string {
 	var out []string
 	for _, part := range strings.Split(configured, ",") {
@@ -292,8 +280,6 @@ func (server *Server) allows(origin string) bool {
 	return false
 }
 
-// hostPortOf strips the scheme but keeps the port, which is what websocket
-// origin matching compares against.
 func hostPortOf(origin string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
 }

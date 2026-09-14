@@ -1,8 +1,3 @@
-// Package chain talks to an EVM node over JSON-RPC.
-//
-// Hand-rolled rather than pulling in go-ethereum: the only things needed here
-// are four RPC calls, a legacy transaction, and three ABI encodings, and the
-// signing primitives are already in this module for sign-in with Ethereum.
 package chain
 
 import (
@@ -70,7 +65,6 @@ func (c *Client) call(ctx context.Context, method string, params ...any) (json.R
 	return envelope.Result, nil
 }
 
-// quantity reads the hex-quantity encoding every JSON-RPC number uses.
 func quantity(raw json.RawMessage) (*big.Int, error) {
 	var text string
 	if err := json.Unmarshal(raw, &text); err != nil {
@@ -91,8 +85,6 @@ func (c *Client) ChainID(ctx context.Context) (*big.Int, error) {
 	return quantity(raw)
 }
 
-// NonceAt asks for the pending count, not the latest: two resolutions submitted
-// in the same block otherwise reuse a nonce and the second is dropped.
 func (c *Client) NonceAt(ctx context.Context, address string) (uint64, error) {
 	raw, err := c.call(ctx, "eth_getTransactionCount", address, "pending")
 	if err != nil {
@@ -125,7 +117,6 @@ func (c *Client) Send(ctx context.Context, signed []byte) (string, error) {
 	return hash, nil
 }
 
-// Call runs a read against the node without spending anything.
 func (c *Client) Call(ctx context.Context, to string, data []byte) ([]byte, error) {
 	raw, err := c.call(ctx, "eth_call", map[string]string{
 		"to": to, "data": "0x" + hexOf(data),
@@ -140,18 +131,11 @@ func (c *Client) Call(ctx context.Context, to string, data []byte) ([]byte, erro
 	return unhex(text)
 }
 
-// Receipt is the part of a transaction receipt worth acting on.
 type Receipt struct {
 	Status      uint64
 	BlockNumber uint64
 }
 
-// WaitFor blocks until the transaction has been mined, or the context is done.
-//
-// Sending returns as soon as the node has the transaction, not when it has run
-// it: a read taken straight after a send came back with the state unchanged,
-// then showed the write a moment later. Anything that sends and then checks its
-// own work has to wait here first.
 func (c *Client) WaitFor(ctx context.Context, hash string) (Receipt, error) {
 	for {
 		raw, err := c.call(ctx, "eth_getTransactionReceipt", hash)

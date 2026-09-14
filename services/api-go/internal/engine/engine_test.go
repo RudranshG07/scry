@@ -51,7 +51,6 @@ func TestConsensusDoesNotReorderCaller(t *testing.T) {
 }
 
 func TestWinner(t *testing.T) {
-	// The usual binary market: above 180, or 180 and below.
 	above := band{id: "yes", min: ptr(181)}
 	below := band{id: "no", max: ptr(180)}
 	bands := []band{above, below}
@@ -80,7 +79,6 @@ func TestWinner(t *testing.T) {
 }
 
 func TestWinnerRejectsAmbiguousBands(t *testing.T) {
-	// Overlapping bands: 181 sits in both, so the market cannot settle.
 	overlapping := []band{
 		{id: "yes", min: ptr(180)},
 		{id: "no", max: ptr(200)},
@@ -89,7 +87,6 @@ func TestWinnerRejectsAmbiguousBands(t *testing.T) {
 		t.Error("overlapping bands resolved, want a refusal")
 	}
 
-	// Gapped bands: nothing covers 190.
 	gapped := []band{
 		{id: "low", max: ptr(180)},
 		{id: "high", min: ptr(200)},
@@ -118,9 +115,9 @@ func TestAllowedSpreadScalesWithVolume(t *testing.T) {
 	cases := []struct {
 		base, want int64
 	}{
-		{0, 2},  // the floor holds where a percentage is meaningless
-		{5, 2},  // 20% of 5 is below the floor
-		{10, 2}, // 20% of 10 is exactly the floor
+		{0, 2},
+		{5, 2},
+		{10, 2},
 		{100, 20},
 		{135, 27},
 		{300, 60},
@@ -132,9 +129,6 @@ func TestAllowedSpreadScalesWithVolume(t *testing.T) {
 	}
 }
 
-// Two different detectors on identical footage were measured at 35 and 30, a
-// 16.7% spread, so the bar has to clear what independent models actually
-// achieve. It still has to reject a detector that has come loose.
 func TestConsensusAcceptsWhatIndependentDetectorsAchieve(t *testing.T) {
 	if value, ok := consensus([]int64{35, 30}, minObservers); !ok || value != 35 {
 		t.Errorf("35 and 30 = %d, %v; two models on the same window measured this", value, ok)
@@ -142,23 +136,17 @@ func TestConsensusAcceptsWhatIndependentDetectorsAchieve(t *testing.T) {
 	if _, ok := consensus([]int64{127, 135}, minObservers); !ok {
 		t.Error("127 and 135 is 6.3% and should stand")
 	}
-	// Half again as many is not a counting difference, it is a broken observer.
 	if _, ok := consensus([]int64{38, 59}, minObservers); ok {
 		t.Error("38 and 59 is 55% and must not settle a market")
 	}
 }
 
 func TestConsensusStillRejectsWildDisagreement(t *testing.T) {
-	// Proportional tolerance must not become a licence to agree on anything.
 	if _, ok := consensus([]int64{100, 200}, minObservers); ok {
 		t.Error("100 and 200 agreed; 5% of 100 is 5, not 100")
 	}
 }
 
-// Paired observer counts measured off the three live cameras. Two of them
-// settle inside the bar window after window; the third does not, and the
-// difference is the camera rather than the detector, which is the case this
-// gate exists to catch.
 func TestVerdictSuspendsOnlyTheStreamObserversCannotAgreeOn(t *testing.T) {
 	cases := []struct {
 		stream  string
@@ -181,8 +169,6 @@ func TestVerdictSuspendsOnlyTheStreamObserversCannotAgreeOn(t *testing.T) {
 }
 
 func TestVerdictWithholdsJudgementUntilThereIsHistory(t *testing.T) {
-	// One bad window is a truck, not a broken camera. Suspending on it would
-	// take a working stream offline for noise.
 	if _, _, ok := verdict([]window{{100, 180}}); ok {
 		t.Error("judged a stream on a single window")
 	}
@@ -206,8 +192,6 @@ func TestObservableRequiresTheLineTheCounterNeeds(t *testing.T) {
 	}{
 		{"crossings with a drawn line", domain.Claim{Kind: "crossings", Target: "person",
 			Options: map[string]any{"line": line}}, true},
-		// This is the shape every scheduled market had, and why none of them
-		// could ever be counted.
 		{"crossings with no options at all", domain.Claim{Kind: "crossings", Target: "anything"}, false},
 		{"crossings with half a line", domain.Claim{Kind: "crossings", Target: "anything",
 			Options: map[string]any{"line": []any{[]any{0.1, 0.5}}}}, false},
@@ -232,8 +216,6 @@ func TestQuestionMatchesWhatIsBeingCounted(t *testing.T) {
 		t.Errorf("a phrase market has no count line to cross, got %q", spoken)
 	}
 
-	// "anything" counts whatever crosses, so the question must not name one kind
-	// of it — this asked about vehicles over a pedestrian crossing.
 	crossed := questionFor(domain.Claim{Kind: "crossings", Target: "anything"}, 180, "vehicles")
 	if !strings.Contains(crossed, "180 things cross the count line") {
 		t.Errorf("unexpected crossings question %q", crossed)
@@ -245,10 +227,6 @@ func TestQuestionMatchesWhatIsBeingCounted(t *testing.T) {
 }
 
 func TestWatchableMeansASourceNotARelayPath(t *testing.T) {
-	// The scheduler and the demotion sweep have to agree on what makes a stream
-	// watchable. They disagreed: scheduling asked for source_url while demotion
-	// asked for public_playback_id, so a submitted link qualified and was sent
-	// straight back to Candidate before it could ever open a market.
 	source, err := os.ReadFile("qualify.go")
 	if err != nil {
 		t.Fatal(err)
@@ -273,13 +251,10 @@ func TestTheQuestionNamesWhatIsActuallyCounted(t *testing.T) {
 	cases := []struct {
 		target, unit, want string
 	}{
-		// Counting everything must not claim to count one kind of thing: this
-		// market asked about "vehicles" over a pedestrian crossing.
 		{"anything", "vehicles", "things"},
 		{"person", "vehicles", "people"},
 		{"car", "people", "cars"},
 		{"bicycle", "events", "bicycles"},
-		// Nothing known about the target, so the stream's own unit stands.
 		{"", "vehicles", "vehicles"},
 	}
 	for _, c := range cases {

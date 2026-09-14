@@ -1,5 +1,3 @@
-// Package auth verifies that a caller controls the address they claim.
-// Positions settle to an address on chain, so the address is the account.
 package auth
 
 import (
@@ -19,8 +17,6 @@ var (
 	ErrNonceMismatch    = errors.New("message carries a different nonce")
 )
 
-// Message is the part of a SIWE payload that gets verified. The domain stops a
-// signature gathered elsewhere being replayed here; the nonce stops replay twice.
 type Message struct {
 	Domain  string
 	Address string
@@ -28,8 +24,6 @@ type Message struct {
 	Raw     string
 }
 
-// Build renders the message a wallet signs. The server composes it so a caller
-// cannot be tricked into signing something broader than it appears.
 func Build(domain, address, nonce, issuedAt, statement string) string {
 	return fmt.Sprintf(
 		"%s wants you to sign in with your Ethereum account:\n%s\n\n%s\n\nURI: https://%s\nVersion: 1\nNonce: %s\nIssued At: %s",
@@ -59,8 +53,6 @@ func Parse(raw string) (Message, error) {
 	return m, nil
 }
 
-// Verify checks the signature and that the message says what is expected.
-// Recovery alone proves only that somebody signed something.
 func Verify(raw, signature, domain, address, nonce string) error {
 	m, err := Parse(raw)
 	if err != nil {
@@ -76,6 +68,8 @@ func Verify(raw, signature, domain, address, nonce string) error {
 		return ErrNonceMismatch
 	}
 
+	// recover alone only proves somebody signed something,
+	// which is why domain and nonce are checked above
 	signer, err := Recover(raw, signature)
 	if err != nil {
 		return err
@@ -86,14 +80,13 @@ func Verify(raw, signature, domain, address, nonce string) error {
 	return nil
 }
 
-// Recover returns the address that produced a personal_sign signature.
 func Recover(raw, signature string) (string, error) {
 	sig, err := decodeHex(signature)
 	if err != nil || len(sig) != 65 {
 		return "", ErrBadSignature
 	}
 
-	// Wallets emit v as 27/28; recovery wants 0/1.
+	// wallets emit v as 27/28, recovery wants 0/1
 	v := sig[64]
 	if v >= 27 {
 		v -= 27
@@ -113,8 +106,7 @@ func Recover(raw, signature string) (string, error) {
 	return "0x" + toHex(sum[12:]), nil
 }
 
-// hash applies the personal_sign prefix, so a login signature cannot also be a
-// valid signature over raw transaction bytes.
+// personal_sign prefix, so a login sig is never valid over raw tx bytes
 func hash(message string) []byte {
 	prefixed := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
 	return keccak([]byte(prefixed))

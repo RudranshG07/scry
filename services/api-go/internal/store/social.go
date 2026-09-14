@@ -50,7 +50,6 @@ func (s *Postgres) AddMessage(ctx context.Context, m domain.RoomMessage) (domain
 }
 
 func (s *Postgres) GetNotifications(ctx context.Context, account string) ([]domain.Notification, error) {
-	// A null account is a broadcast, so everyone sees it.
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind, title, body, market_id, created_at
 		FROM notifications

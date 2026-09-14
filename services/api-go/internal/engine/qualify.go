@@ -11,14 +11,11 @@ import (
 const (
 	minWindows   = 4
 	minAgreement = 0.75
-	// Suspension stops scheduling, which stops the windows needed to recover.
-	probation = 2 * time.Hour
+	probation    = 2 * time.Hour
 )
 
 type window struct{ lo, hi int64 }
 
-// qualify suspends streams whose observers cannot agree. Uptime and contrast
-// only say the footage arrived; a result rests on two of them agreeing.
 func (e *Engine) qualify(ctx context.Context) error {
 	if err := e.unsourced(ctx); err != nil {
 		return err
@@ -30,8 +27,6 @@ func (e *Engine) qualify(ctx context.Context) error {
 		return err
 	}
 
-	// Only windows since the last decision, or a reinstated stream is judged on
-	// the readings that suspended it.
 	rows, err := e.pool.Query(ctx, `
 		WITH w AS (
 		    SELECT m.stream_id,
@@ -92,8 +87,6 @@ func (e *Engine) qualify(ctx context.Context) error {
 	return nil
 }
 
-// verdict returns false when there is not enough history to judge, which is not
-// the same as a pass.
 func verdict(ws []window) (string, int, bool) {
 	if len(ws) < minWindows {
 		return "", 0, false
@@ -110,13 +103,6 @@ func verdict(ws []window) (string, int, bool) {
 	return "Qualified", agreed, true
 }
 
-// unsourced demotes streams nobody can watch, which would sit Qualified forever
-// and never publish.
-//
-// Watchable means having a source_url, not a relay playback id. A submitted link
-// never has the latter, so asking for it demoted every stream that came through
-// the front door back to Candidate the moment an inspection qualified it, and
-// nothing anyone submitted could ever reach a market.
 func (e *Engine) unsourced(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE streams SET status = 'Candidate', updated_at = NOW()
@@ -138,12 +124,6 @@ func (e *Engine) unsourced(ctx context.Context) error {
 	return rows.Err()
 }
 
-// voidUnwatchable closes markets whose stream has been suspended.
-//
-// Suspending a camera stopped new markets but left the ones already in flight
-// open, so a market on a stream we know has gone dark kept taking positions it
-// could only ever void. Windows already being observed are left alone: they may
-// still resolve, and the resolver invalidates them if no report arrives.
 func (e *Engine) voidUnwatchable(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE markets m
@@ -168,16 +148,6 @@ func (e *Engine) voidUnwatchable(ctx context.Context) error {
 	return rows.Err()
 }
 
-// reinstate clears the window history too, so a stream is judged on what it
-// does next rather than on why it was suspended.
-//
-// Coming off probation means looking again, not assuming the camera came back.
-// It returns provisional and with its last inspection forgotten, so the sweep
-// picks it up and the scheduler leaves it alone until something has actually
-// watched it. Reinstating straight to Qualified put dead links back to work:
-// a camera whose stream had ended kept its "could not find a live stream"
-// reason, opened markets nobody could watch, and churned through invalidating
-// them until it was suspended again two hours later.
 func (e *Engine) reinstate(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		UPDATE streams

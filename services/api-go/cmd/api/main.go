@@ -36,10 +36,6 @@ func main() {
 		defer stopEngine()
 		go engine.New(postgres.Pool(), slog.Default(), settings.ObserverPairs).Run(engineCtx)
 	} else {
-		// There is no fallback store. There used to be one serving invented
-		// markets indistinguishable from real ones over the API, which cost
-		// hours here twice. Nothing this serves is worth reading unless it was
-		// observed, so with no database there is nothing to serve.
 		slog.Error("SCRY_DATABASE_URL is unset, and there is nothing to serve without it.")
 		os.Exit(1)
 	}

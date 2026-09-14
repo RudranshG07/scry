@@ -11,11 +11,8 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// ErrNotObserving means a late report, which is refused rather than backdated.
 var ErrNotObserving = errors.New("market is not observing")
 
-// SaveReport records one observer's reading. Writing twice replaces its own row
-// rather than adding a second vote.
 func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) error {
 	var status string
 	err := s.pool.QueryRow(ctx, `SELECT status FROM markets WHERE id = $1`, r.MarketID).Scan(&status)
@@ -61,8 +58,6 @@ func (s *Postgres) SaveReport(ctx context.Context, r domain.ObserverReport) erro
 	return nil
 }
 
-// SaveCounts appends the per-interval counts behind a report. They belong to the
-// stream; the market only says which stream to file them against.
 func (s *Postgres) SaveCounts(ctx context.Context, marketID, observerID string, counts []domain.CountSample) error {
 	if len(counts) == 0 {
 		return nil
@@ -97,8 +92,6 @@ func (s *Postgres) SaveCounts(ctx context.Context, marketID, observerID string, 
 	return s.saveSamples(ctx, marketID, observerID, counts)
 }
 
-// saveSamples keeps the intervals in the order they were hashed, since the
-// stream-level counts get compacted and a proof needs the exact leaves.
 func (s *Postgres) saveSamples(ctx context.Context, marketID, observerID string, counts []domain.CountSample) error {
 	_, err := s.pool.Exec(ctx,
 		`DELETE FROM observation_samples WHERE market_id = $1 AND observer_id = $2`,

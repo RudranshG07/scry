@@ -14,8 +14,6 @@ import (
 
 const sessionCookie = "scry_session"
 
-// Sessions is the part of the store sign-in needs. Keeping it narrow means the
-// handlers cannot reach for market data by accident.
 type Sessions interface {
 	IssueNonce(context.Context, string) (string, error)
 	ConsumeNonce(context.Context, string, string) error
@@ -49,8 +47,6 @@ func (server *Server) postNonce(writer http.ResponseWriter, request *http.Reques
 	writeJSON(writer, http.StatusOK, map[string]string{
 		"nonce":    nonce,
 		"issuedAt": issued,
-		// The server composes the text to be signed. Letting the client supply it
-		// would mean signing whatever it decided to put in front of the user.
 		"message": auth.Build(server.domain, strings.ToLower(body.Address), nonce, issued,
 			"Sign in to Scry. This proves you control this wallet and costs nothing."),
 	})
@@ -79,9 +75,6 @@ func (server *Server) postSession(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 
-	// Spend the nonce before checking the signature. A signature that fails
-	// verification has still exposed the nonce, and leaving it live would let it
-	// be tried again.
 	if err := sessions.ConsumeNonce(request.Context(), parsed.Nonce, body.Address); err != nil {
 		writeError(writer, http.StatusUnauthorized, "nonce_spent", "This sign-in has expired. Try again.")
 		return
@@ -99,11 +92,9 @@ func (server *Server) postSession(writer http.ResponseWriter, request *http.Requ
 	}
 
 	http.SetCookie(writer, &http.Cookie{
-		Name:  sessionCookie,
-		Value: raw,
-		Path:  "/",
-		// The token never needs to be read by scripts, so it is kept out of their
-		// reach; SameSite blocks another site from spending it on the user's behalf.
+		Name:     sessionCookie,
+		Value:    raw,
+		Path:     "/",
 		HttpOnly: true,
 		Secure:   server.secureCookies,
 		SameSite: http.SameSiteLaxMode,
@@ -137,7 +128,6 @@ func (server *Server) deleteSession(writer http.ResponseWriter, request *http.Re
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-// caller returns the signed-in address, if there is one.
 func (server *Server) caller(request *http.Request) (string, bool) {
 	sessions, ok := server.store.(Sessions)
 	if !ok {

@@ -12,9 +12,6 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// StreamID is derived from the link so the same camera submitted twice is the
-// same stream. The slug is there to make logs readable; the digest is what
-// makes it unique.
 func StreamID(name, sourceURL string) string {
 	slug := strings.Map(func(r rune) rune {
 		switch {
@@ -38,9 +35,6 @@ func StreamID(name, sourceURL string) string {
 	return fmt.Sprintf("stream-%s-%s", slug, hex.EncodeToString(sum[:4]))
 }
 
-// SubmitStream records a link for inspection. It is deliberately not qualified
-// and carries no playback id, so the scheduler opens nothing on it until an
-// inspection has watched it and said what it can count.
 func (s *Postgres) SubmitStream(ctx context.Context, sub domain.StreamSubmission, by string) (domain.StreamSource, error) {
 	id := StreamID(sub.Name, sub.SourceURL)
 
@@ -75,10 +69,6 @@ func (s *Postgres) SubmitStream(ctx context.Context, sub domain.StreamSubmission
 	return out, nil
 }
 
-// Watchable lists streams a market could be opened on right now: qualified, not
-// on probation for being too quiet, and with a source to watch. It is the same
-// set the scheduler works from, so anything reading this sees what the engine
-// sees rather than a copy that drifts.
 func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, region, timezone, coalesce(source_url, ''), status,
@@ -105,8 +95,6 @@ func (s *Postgres) Watchable(ctx context.Context) ([]domain.StreamSource, error)
 	return out, rows.Err()
 }
 
-// SceneForMarket is the view the market's stream was qualified on, or empty if
-// it was qualified before fingerprints were recorded.
 func (s *Postgres) SceneForMarket(ctx context.Context, marketID string) (string, error) {
 	var scene string
 	err := s.pool.QueryRow(ctx, `
@@ -119,9 +107,6 @@ func (s *Postgres) SceneForMarket(ctx context.Context, marketID string) (string,
 	return scene, nil
 }
 
-// PendingQualification lists streams due another look. A link that qualified on
-// submission can be offline, re-aimed or dark a week later, and a market on one
-// can only ever void.
 func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration) ([]domain.StreamSource, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, region, timezone, coalesce(source_url, ''), status,
@@ -148,9 +133,6 @@ func (s *Postgres) PendingQualification(ctx context.Context, stale time.Duration
 	return out, rows.Err()
 }
 
-// RecordQualification stores what an inspection found and moves the stream to
-// match it. A stream nobody can count is suspended rather than left scheduling
-// markets that cannot settle.
 func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.Qualification) error {
 	status := "Suspended"
 	if v.Usable {
@@ -159,10 +141,7 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	fields := map[string]any{
-		"inspectedAt": now,
-		// The engine's probation reads checkedAt, so a stream suspended here
-		// recovers on the same clock as one suspended for disagreement. Without
-		// it a camera that went quiet overnight would never be looked at again.
+		"inspectedAt":  now,
 		"checkedAt":    now,
 		"usable":       v.Usable,
 		"reason":       v.Reason,
@@ -172,15 +151,9 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 		"disagreement": v.Disagreement,
 		"provisional":  v.Provisional,
 	}
-	// Only when it was measured. An inspection that failed before it could count
-	// reports zero, and writing that would set every market on the stream to
-	// "more than nothing", which settles yes on a single passer-by.
 	if v.Threshold > 0 {
 		fields["threshold"] = v.Threshold
 	}
-	// Only when one was taken. An inspection that never got a frame reports an
-	// empty fingerprint, and storing that would void every later market for
-	// counting a scene nobody recorded.
 	if v.Scene != "" {
 		fields["scene"] = v.Scene
 	}

@@ -1,5 +1,3 @@
-// Package engine advances markets through their lifecycle. It owns the clock:
-// nothing else in the system decides when a market opens, locks or settles.
 package engine
 
 import (
@@ -14,12 +12,8 @@ type Engine struct {
 	pool *pgxpool.Pool
 	tick time.Duration
 	log  *slog.Logger
-	// Streams already reported as unschedulable. The sweep runs every second
-	// and an unusable claim does not fix itself, so without this the reason
-	// scrolls past once a second and buries everything else in the log.
 	warned map[string]bool
-	// How many observation windows may be in flight at once.
-	pairs int
+	pairs  int
 }
 
 func New(pool *pgxpool.Pool, log *slog.Logger, pairs int) *Engine {
@@ -45,9 +39,7 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 }
 
-// step is deliberately idempotent. Every transition is a guarded UPDATE, so a
-// second engine running against the same database is harmless — one of them
-// wins the row and the other sees no rows affected.
+
 func (e *Engine) step(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

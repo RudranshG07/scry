@@ -61,20 +61,10 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 }
 
 const (
-	// How far back settled markets stay on the board. Long enough to see what
-	// just happened, short enough that the list is about now.
 	recentWindow = "6 hours"
-	// A hard ceiling so one long-running stream cannot bury the rest.
-	listLimit = 60
+	listLimit    = 60
 )
 
-// ListMarkets returns what is live plus what settled recently.
-//
-// It used to select every market ever opened. After a day of running that was
-// 310 rows, 292 of them invalidated, and the three live markets were buried
-// under weeks of dead ones. The board is meant to answer "what can I watch and
-// take a side on now", and an unbounded history answers a different question
-// while getting slower every hour.
 func (s *Postgres) ListMarkets(ctx context.Context) ([]domain.Market, error) {
 	rows, err := s.pool.Query(ctx, marketQuery+`
 		WHERE m.status IN ('Scheduled', 'Open', 'Locked', 'Observing', 'Result proposed')
@@ -111,7 +101,6 @@ func (s *Postgres) GetMarket(ctx context.Context, id string) (domain.Market, err
 	return one[0], nil
 }
 
-// fill adds everything that needs its own query.
 func (s *Postgres) fill(ctx context.Context, ms []domain.Market) ([]domain.Market, error) {
 	if len(ms) == 0 {
 		return ms, nil
@@ -173,8 +162,6 @@ func (s *Postgres) outcomes(ctx context.Context, ids []string) (map[string][]dom
 	return out, rows.Err()
 }
 
-// price is parimutuel: your share of the pool is the odds, and the payout is
-// its inverse. No stake either side means an even market.
 func price(staked, total float64) (float64, float64) {
 	share := 0.5
 	if total > 0 {

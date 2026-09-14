@@ -5,9 +5,6 @@ import (
 	"fmt"
 )
 
-// advance moves every market whose deadline has passed. The WHERE clause
-// carries the current status, so the update only lands once no matter how many
-// engines are running.
 func (e *Engine) advance(ctx context.Context, from, to, deadline string) error {
 	rows, err := e.pool.Query(ctx, fmt.Sprintf(`
 		UPDATE markets
@@ -42,7 +39,6 @@ func (e *Engine) observe(ctx context.Context) error {
 	return e.advance(ctx, "Locked", "Observing", "observation_starts_at")
 }
 
-// settle closes the challenge window. Nothing can change the result after this.
 func (e *Engine) settle(ctx context.Context) error {
 	return e.advance(ctx, "Result proposed", "Resolved", "challenge_ends_at")
 }

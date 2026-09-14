@@ -9,9 +9,6 @@ type Config struct {
 	Address       string
 	AllowedOrigin string
 	DatabaseURL   string
-	// How many observation windows may run at once. An observer pair can only
-	// count one window at a time, so opening a market on every qualified stream
-	// at once leaves all but one of them with nobody watching.
 	ObserverPairs int
 }
 

@@ -36,8 +36,6 @@ func NewPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 
 func (s *Postgres) Close() { s.pool.Close() }
 
-// Pool exposes the connection for the engine, which writes rather than reads
-// and so does not go through the Store interface.
 func (s *Postgres) Pool() *pgxpool.Pool { return s.pool }
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
@@ -55,7 +53,6 @@ func round(v float64, places int) float64 {
 	return math.Round(v*f) / f
 }
 
-// pgx hands back a nil slice for no rows, which marshals to null, not [].
 func filled[T any](in []T) []T {
 	if in == nil {
 		return []T{}

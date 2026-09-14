@@ -14,24 +14,12 @@ import (
 )
 
 const (
-	// Observers must land on the same number for a result to stand.
 	minObservers = domain.ObserversRequired
-	// Proportional: a fixed margin is too tight at 200 and too loose at 5.
-	//
-	// Measured, not chosen. At 0.05 no market settled in ten days: two different
-	// detectors on identical footage — same frames, same sampling — reported 35
-	// and 30 crossings, and 42 and 53 before frame sampling was fixed. The gap
-	// is the detectors themselves, since a bigger model finds more distant
-	// vehicles and every one it finds may cross the line. Two copies of one
-	// model agree exactly, which is why the quorum asks for two different ones
-	// and has to tolerate what that costs.
+
 	tolerancePercent = 0.20
 	toleranceFloor   = 2
-	// How long anyone has to challenge a proposed result.
-	challengeWindow = 10 * time.Minute
-	// An observer covers the window to its last second, so its report is only in
-	// flight once the window has closed.
-	reportGrace = 60 * time.Second
+	challengeWindow  = 10 * time.Minute
+	reportGrace      = 60 * time.Second
 )
 
 type band struct {
@@ -39,8 +27,6 @@ type band struct {
 	min, max *int64
 }
 
-// propose closes observation and either publishes a result or voids the market.
-// No quorum means invalid, not zero.
 func (e *Engine) propose(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT id FROM markets
@@ -124,8 +110,6 @@ func (e *Engine) invalidate(ctx context.Context, id string, reporting int) error
 	return nil
 }
 
-// evidenceRoot takes the bundle of an observer who reported the settled value;
-// anyone else's would point later proofs at intervals that do not add up.
 func (e *Engine) evidenceRoot(ctx context.Context, id string, value int64) (*string, error) {
 	var root *string
 	err := e.pool.QueryRow(ctx, `
@@ -183,14 +167,11 @@ func (e *Engine) bands(ctx context.Context, id string) ([]band, error) {
 	return out, rows.Err()
 }
 
-// allowedSpread is how far apart two counts can be and still agree.
 func allowedSpread(base int64) int64 {
 	scaled := int64(math.Ceil(float64(base) * tolerancePercent))
 	return max(toleranceFloor, scaled)
 }
 
-// consensus returns the median of the largest agreeing group. Outliers are
-// dropped rather than averaged in.
 func consensus(counts []int64, need int) (int64, bool) {
 	if len(counts) < need {
 		return 0, false
@@ -220,7 +201,6 @@ func consensus(counts []int64, need int) (int64, bool) {
 	return best[len(best)/2], true
 }
 
-// winner picks the outcome whose band contains the value; exactly one must match.
 func winner(value int64, bands []band) (string, bool) {
 	var found string
 	hits := 0

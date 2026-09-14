@@ -2,14 +2,8 @@ package domain
 
 import "time"
 
-// ObserversRequired is how many independent observers must sign the same value
-// for a market to settle. The screen used to say three while the engine asked
-// for two and two ever ran, so a market showing "0/3" was waiting for an
-// observer that does not exist.
 const ObserversRequired = 2
 
-// Claim is what a market counts. The kind decides which observer runs, so a new
-// kind of countable thing needs an observer and nothing else.
 type Claim struct {
 	Kind    string         `json:"kind"`
 	Target  string         `json:"target"`
@@ -26,25 +20,22 @@ type MarketOutcome struct {
 }
 
 type Market struct {
-	ID                string  `json:"id"`
-	StreamID          string  `json:"streamId"`
-	Category          string  `json:"category"`
-	Unit              string  `json:"unit"`
-	Location          string  `json:"location"`
-	City              string  `json:"city"`
-	Question          string  `json:"question"`
-	Status            string  `json:"status"`
-	Countdown         string  `json:"countdown"`
-	Pool              float64 `json:"pool"`
-	CurrentRate       float64 `json:"currentRate"`
-	Baseline          float64 `json:"baseline"`
-	Observers         int     `json:"observers"`
-	ObserversRequired int     `json:"observersRequired"`
-	ChainID           int64   `json:"chainId"`
-	Claim             Claim   `json:"claim"`
-	// Nil until the market has been deployed. Positions are only real once there
-	// is a contract holding the collateral, so the client uses this to tell a
-	// live market from one that exists in the database alone.
+	ID                  string          `json:"id"`
+	StreamID            string          `json:"streamId"`
+	Category            string          `json:"category"`
+	Unit                string          `json:"unit"`
+	Location            string          `json:"location"`
+	City                string          `json:"city"`
+	Question            string          `json:"question"`
+	Status              string          `json:"status"`
+	Countdown           string          `json:"countdown"`
+	Pool                float64         `json:"pool"`
+	CurrentRate         float64         `json:"currentRate"`
+	Baseline            float64         `json:"baseline"`
+	Observers           int             `json:"observers"`
+	ObserversRequired   int             `json:"observersRequired"`
+	ChainID             int64           `json:"chainId"`
+	Claim               Claim           `json:"claim"`
 	ContractAddress     *string         `json:"contractAddress,omitempty"`
 	OpensAt             string          `json:"opensAt"`
 	LocksAt             string          `json:"locksAt"`
@@ -57,7 +48,6 @@ type Market struct {
 	Trend               []float64       `json:"trend"`
 }
 
-// StreamSource is a submitted link and what the last inspection made of it.
 type StreamSource struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -65,15 +55,9 @@ type StreamSource struct {
 	Timezone  string `json:"timezone"`
 	SourceURL string `json:"sourceUrl"`
 	Status    string `json:"status"`
-	// What this stream is set up to count. An inspection has to measure the
-	// same thing the market settles on, and for a line claim that is crossings
-	// over the window rather than how many subjects stand in frame.
-	Claim Claim `json:"claim"`
+	Claim     Claim  `json:"claim"`
 }
 
-// StreamSubmission is a link somebody wants markets run on, before anything has
-// watched it. Nothing here is trusted: the inspector decides whether it can be
-// counted, and until it does the stream opens no markets.
 type StreamSubmission struct {
 	SourceURL string `json:"sourceUrl"`
 	Name      string `json:"name"`
@@ -83,7 +67,6 @@ type StreamSubmission struct {
 	Claim     Claim  `json:"claim"`
 }
 
-// Qualification is what watching a stream established about it.
 type Qualification struct {
 	Usable       bool    `json:"usable"`
 	Reason       string  `json:"reason"`
@@ -92,12 +75,8 @@ type Qualification struct {
 	Peak         int     `json:"peak"`
 	Disagreement float64 `json:"disagreement"`
 	Provisional  bool    `json:"provisional"`
-	// What a market on this stream should be set at, measured from what the
-	// camera actually passes in a window.
-	Threshold int `json:"threshold"`
-	// The view this verdict was reached on, so a later count taken after the
-	// camera moved can be told apart from one taken on the scene that qualified.
-	Scene string `json:"scene"`
+	Threshold    int     `json:"threshold"`
+	Scene        string  `json:"scene"`
 }
 
 type Observer struct {
@@ -179,31 +158,24 @@ type Notification struct {
 	CreatedAt string  `json:"createdAt"`
 }
 
-// ObserverReport is one observer's answer for a market, submitted over the
-// network. Observers are meant to be independent, so the API is the only way in.
 type ObserverReport struct {
-	MarketID       string   `json:"marketId"`
-	ObserverID     string   `json:"observerId"`
-	Role           string   `json:"role"`
-	ObservedValue  int64    `json:"observedValue"`
-	Confidence     float64  `json:"confidence"`
-	ModelVersion   string   `json:"modelVersion"`
-	Uptime         float64  `json:"uptime"`
-	DriftMS        float64  `json:"maximumTimestampDriftMs"`
-	Visibility     float64  `json:"averageVisibility"`
-	FrozenSeconds  float64  `json:"longestFrozenSeconds"`
-	InvalidReasons []string `json:"invalidReasons"`
-	Signature      *string  `json:"signature,omitempty"`
-	EvidenceRoot   *string  `json:"evidenceRoot,omitempty"`
-	// What the camera was looking at while counting, so a count taken after the
-	// view changed can be told from one taken on the scene that qualified.
-	SceneHash string        `json:"sceneHash,omitempty"`
-	Counts    []CountSample `json:"counts,omitempty"`
+	MarketID       string        `json:"marketId"`
+	ObserverID     string        `json:"observerId"`
+	Role           string        `json:"role"`
+	ObservedValue  int64         `json:"observedValue"`
+	Confidence     float64       `json:"confidence"`
+	ModelVersion   string        `json:"modelVersion"`
+	Uptime         float64       `json:"uptime"`
+	DriftMS        float64       `json:"maximumTimestampDriftMs"`
+	Visibility     float64       `json:"averageVisibility"`
+	FrozenSeconds  float64       `json:"longestFrozenSeconds"`
+	InvalidReasons []string      `json:"invalidReasons"`
+	Signature      *string       `json:"signature,omitempty"`
+	EvidenceRoot   *string       `json:"evidenceRoot,omitempty"`
+	SceneHash      string        `json:"sceneHash,omitempty"`
+	Counts         []CountSample `json:"counts,omitempty"`
 }
 
-// EvidenceSample is one counting interval with the siblings needed to check it
-// against the published root, so a single interval can be verified without
-// republishing the footage behind it.
 type EvidenceSample struct {
 	ObservedAt      time.Time `json:"observedAt"`
 	Count           int64     `json:"count"`
@@ -214,10 +186,6 @@ type EvidenceSample struct {
 	Proof           []string  `json:"proof"`
 }
 
-// EvidenceBundle carries the root the observer published alongside the root
-// recomputed here from the stored intervals. They are shown separately on
-// purpose: if they disagree, the record has been altered since it was committed,
-// and hiding that behind a single field would be the one thing this must not do.
 type EvidenceBundle struct {
 	MarketID   string           `json:"marketId"`
 	ObserverID string           `json:"observerId"`
@@ -226,7 +194,6 @@ type EvidenceBundle struct {
 	Samples    []EvidenceSample `json:"samples"`
 }
 
-// CountSample is one interval of counting behind a report.
 type CountSample struct {
 	ObservedAt      string  `json:"observedAt"`
 	Count           int64   `json:"count"`
@@ -236,8 +203,6 @@ type CountSample struct {
 	FrameDigest     string  `json:"frameDigest,omitempty"`
 }
 
-// Units name what a market counts. The category decides it, so a client never
-// has to guess from the question text.
 var Units = map[string]string{
 	"Traffic":    "vehicles",
 	"Parking":    "arrivals",

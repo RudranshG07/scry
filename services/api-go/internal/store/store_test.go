@@ -31,7 +31,6 @@ func TestPrice(t *testing.T) {
 }
 
 func TestBalance(t *testing.T) {
-	// 64.5 and 35.5 both round up and show as 101.
 	os := balance([]domain.MarketOutcome{
 		{ID: "yes", Probability: 65},
 		{ID: "no", Probability: 36},

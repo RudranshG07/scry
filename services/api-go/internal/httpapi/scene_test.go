@@ -15,9 +15,6 @@ func TestSceneDriftCountsDifferingBits(t *testing.T) {
 }
 
 func TestAnUnreadableFingerprintIsNeverAMatch(t *testing.T) {
-	// Silence must not pass for agreement: an observer that sends nothing, or
-	// something that is not a fingerprint, has not shown it counted the right
-	// scene.
 	for _, reported := range []string{"", "not-hex", "zzzz", "ffffffffffffffffff"} {
 		if !sceneChanged("95689182cb4fbc3b", reported) {
 			t.Errorf("reported %q passed as the qualified scene", reported)
@@ -26,8 +23,6 @@ func TestAnUnreadableFingerprintIsNeverAMatch(t *testing.T) {
 }
 
 func TestTheSameViewSurvivesTrafficAndNightfall(t *testing.T) {
-	// Measured on a synthetic road scene: cars appearing and a 55 level
-	// brightness drop both moved the fingerprint by 0 bits, a pan by 34.
 	qualified := "95689182cb4fbc3b"
 	if sceneChanged(qualified, qualified) {
 		t.Error("the same view was called a different scene")
@@ -44,18 +39,12 @@ func TestACutToAnotherCameraIsRefused(t *testing.T) {
 }
 
 func TestAStreamQualifiedBeforeFingerprintsIsNotPenalised(t *testing.T) {
-	// Every market on those streams would otherwise void for a check that was
-	// not running when they were qualified.
 	if sceneChanged("", "95689182cb4fbc3b") {
 		t.Error("a stream with no recorded scene had its market voided")
 	}
 }
 
 func TestTheBarClearsMeasuredNoiseAndCatchesAMove(t *testing.T) {
-	// Measured on live cameras: the same view wanders up to 12 bits between
-	// samples, and one that has moved lands at 30 or more. A bar inside that
-	// noise voided a market whose observers both had full uptime and agreed to
-	// within 10%.
 	if maxSceneDrift <= 12 {
 		t.Errorf("maxSceneDrift = %d sits inside the noise a still camera makes", maxSceneDrift)
 	}

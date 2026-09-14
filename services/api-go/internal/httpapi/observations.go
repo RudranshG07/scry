@@ -13,8 +13,6 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
 
-// Observers are independent processes on the far side of a network, so treat
-// every field as hostile until checked.
 const (
 	maxReportBytes = 1 << 20
 	maxCountRows   = 3600
@@ -30,9 +28,6 @@ var (
 	}
 )
 
-// observationStore is satisfied by the Postgres store. The in-memory store is
-// read-only, so a deployment without a database refuses reports rather than
-// pretending to accept them.
 type observationStore interface {
 	SaveReport(context.Context, domain.ObserverReport) error
 	SaveCounts(context.Context, string, string, []domain.CountSample) error
@@ -62,8 +57,6 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	// A count taken after the camera moved is not the count this market asked
-	// for, however confidently the observers agree on it.
 	if scenes, ok := server.store.(QualifiedScenes); ok {
 		if qualified, err := scenes.SceneForMarket(request.Context(), report.MarketID); err == nil {
 			if sceneChanged(qualified, report.SceneHash) {
@@ -89,8 +82,6 @@ func (server *Server) postObservation(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	// The report settles the market; the per-interval counts are supporting
-	// evidence, so losing them is reported but not fatal.
 	if len(report.Counts) > 0 {
 		if err := ingester.SaveCounts(request.Context(), report.MarketID, report.ObserverID, report.Counts); err != nil {
 			writeJSON(writer, http.StatusAccepted, map[string]string{

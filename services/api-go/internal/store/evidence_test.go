@@ -23,9 +23,6 @@ func sample(count int64, when string) domain.EvidenceSample {
 	}
 }
 
-// Roots computed by scry_vision/evidence.py over the same intervals. If these
-// ever diverge, every proof served here fails against the root the observer
-// actually published, and the failure is silent on both sides.
 func TestRootMatchesTheObserver(t *testing.T) {
 	cases := []struct {
 		name  string

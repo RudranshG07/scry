@@ -12,13 +12,11 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// Inspections is the part of the store re-qualification needs.
 type Inspections interface {
 	PendingQualification(context.Context, time.Duration) ([]domain.StreamSource, error)
 	RecordQualification(context.Context, string, domain.Qualification) error
 }
 
-// Watchable is the part of the store that says which streams can host a market.
 type Watchable interface {
 	Watchable(context.Context) ([]domain.StreamSource, error)
 }
@@ -38,7 +36,6 @@ func (server *Server) getStreams(writer http.ResponseWriter, request *http.Reque
 	writeJSON(writer, http.StatusOK, streams)
 }
 
-// Submissions is the part of the store the front door needs.
 type Submissions interface {
 	SubmitStream(context.Context, domain.StreamSubmission, string) (domain.StreamSource, error)
 }
@@ -50,9 +47,6 @@ func (server *Server) postStream(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	// Submissions are attributed, so a link that turns out to be someone's
-	// living room has a name against it. Scry posts its own streams too, and
-	// those carry an operator token rather than a wallet.
 	address, ok := server.submitter(request)
 	if !ok {
 		writeError(writer, http.StatusUnauthorized, "not_signed_in", "Sign in to submit a stream.")
@@ -91,9 +85,6 @@ func (server *Server) postStream(writer http.ResponseWriter, request *http.Reque
 		body.Region = "Unknown"
 	}
 
-	// The claim is checked here rather than at scheduling because a submitter
-	// who drew no line gets told now, instead of watching a stream sit
-	// Candidate forever with nothing explaining why.
 	if reason, ok := countable(body.Claim); !ok {
 		writeError(writer, http.StatusBadRequest, "claim_uncountable", reason)
 		return
@@ -107,8 +98,6 @@ func (server *Server) postStream(writer http.ResponseWriter, request *http.Reque
 	writeJSON(writer, http.StatusAccepted, stream)
 }
 
-// countable mirrors what the observers can actually run, so a submission is
-// refused at the door rather than accepted and silently never scheduled.
 func countable(c domain.Claim) (string, bool) {
 	switch c.Kind {
 	case "crossings":
@@ -119,7 +108,7 @@ func countable(c domain.Claim) (string, bool) {
 		return "", true
 	case "phrase", "objects":
 		if strings.TrimSpace(c.Target) == "" {
-			return "Say what to count — a phrase to listen for, or a thing to look for.", false
+			return "Say what to count: a phrase to listen for, or a thing to look for.", false
 		}
 		return "", true
 	default:
@@ -127,8 +116,6 @@ func countable(c domain.Claim) (string, bool) {
 	}
 }
 
-// A link that qualified on submission can be offline, re-aimed or dark a week
-// later, so every stream is looked at again on this cadence.
 const inspectEvery = 6 * time.Hour
 
 func (server *Server) getPendingStreams(writer http.ResponseWriter, request *http.Request) {
@@ -173,15 +160,10 @@ func (server *Server) postQualification(writer http.ResponseWriter, request *htt
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-// submitter is whoever is adding this stream: a signed-in address, or Scry
-// itself holding the operator token.
 func (server *Server) submitter(request *http.Request) (string, bool) {
 	if address, ok := server.caller(request); ok {
 		return address, true
 	}
-	// An unset token would otherwise match a request that sent no token, which
-	// turns the front door into an open one on any deployment that forgot to
-	// configure it.
 	if server.operatorToken == "" {
 		return "", false
 	}

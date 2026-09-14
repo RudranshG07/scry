@@ -11,7 +11,6 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
-// Drop below this for the window and the market invalidates, refunding everyone.
 const minUptime = 99.0
 
 func (s *Postgres) GetProof(ctx context.Context, id string) (domain.ProofOfObservation, error) {
@@ -83,8 +82,6 @@ func (s *Postgres) observers(ctx context.Context, id string) ([]domain.Observer,
 	return out, round(total/float64(len(out))*100, 2), nil
 }
 
-// A report with invalid reasons means this observer broke from the consensus;
-// a signature means it committed to the result.
 func observerState(bad []string, sig *string) string {
 	switch {
 	case len(bad) > 0:

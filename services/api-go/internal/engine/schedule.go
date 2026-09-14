@@ -15,17 +15,11 @@ import (
 )
 
 const (
-	baseChainID = 8453
-	// Gap between one market settling and the next opening, so a room is never
-	// mid-window when a user arrives.
+	baseChainID        = 8453
 	restBetweenMarkets = 2 * time.Minute
 	openWindow         = 8 * time.Minute
-	// Four minutes, not fifteen. Almost everything that spoils a window is a
-	// function of how long the window is: a capture that timed out 302 seconds
-	// in, a camera that panned away from the line it was qualified on, an
-	// observer that lost coverage joining late. None of those can happen inside
-	// four minutes, and a market needs both observers to get through cleanly, so
-	// the exposure was being paid for twice.
+	// short on purpose. most things that spoil a window are a function
+	// of how long it is, and both observers have to get through cleanly
 	observeWindow = 4 * time.Minute
 )
 
@@ -36,11 +30,6 @@ type streamPlan struct {
 	claim     domain.Claim
 }
 
-// observable reports whether anything can actually count this claim. A market
-// carrying a claim no observer supports is skipped by every worker and expires
-// Invalid, which is how 218 markets on a working camera settled at nothing: the
-// crossings observer needs the line the submitter drew, and the scheduler was
-// leaving it empty.
 func observable(c domain.Claim) bool {
 	switch c.Kind {
 	case "crossings":
@@ -53,10 +42,6 @@ func observable(c domain.Claim) bool {
 	}
 }
 
-// What the market is counting, in words, taken from the claim rather than from
-// the stream's category. Shibuya was submitted as Traffic when vehicles happened
-// to dominate the first look, then counted "anything", and asked about
-// "vehicles" over a pedestrian crossing.
 var counted = map[string]string{
 	"person":     "people",
 	"bicycle":    "bicycles",
@@ -71,7 +56,6 @@ func nounFor(c domain.Claim, unit string) string {
 		return word
 	}
 	if c.Target == "anything" {
-		// Whatever crosses counts, so the question must not name one kind of it.
 		return "things"
 	}
 	return unit
@@ -91,8 +75,6 @@ func questionFor(c domain.Claim, threshold int64, unit string) string {
 	}
 }
 
-// schedule keeps one market in flight per qualified stream. A stream with
-// nothing scheduled, open, locked or observing gets its next window.
 func (e *Engine) schedule(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT s.id, s.category,
@@ -153,13 +135,6 @@ func (e *Engine) schedule(ctx context.Context) error {
 	return nil
 }
 
-// busyUntil is when a new observation window could start without more of them
-// running at once than there are observers to count them. Nil means now.
-//
-// Observers are a shared pool, not one pair per camera. Opening a window on
-// every qualified stream at the same moment gave three of the four streams here
-// no observer at all: every window they ran expired Invalid with not one report
-// filed against it, for days, while the pair that exists counted the fourth.
 func (e *Engine) busyUntil(ctx context.Context) (time.Time, error) {
 	var ends time.Time
 	err := e.pool.QueryRow(ctx, `
@@ -179,8 +154,6 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 		return fmt.Errorf("find free observers: %w", err)
 	}
 
-	// Betting may overlap freely; only the counting is rationed. So the window
-	// is placed from its observation start backwards.
 	locks := time.Now().UTC().Add(restBetweenMarkets + openWindow).Truncate(time.Second)
 	if queued := busy.Add(restBetweenMarkets); queued.After(locks) {
 		locks = queued.Truncate(time.Second)
@@ -238,8 +211,6 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 	return nil
 }
 
-// ruleHash commits the parts of the rule a result must be checked against. It
-// is written before the market opens and never changes.
 func ruleHash(id string, threshold int64, ends time.Time) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s|%d|%d", id, threshold, ends.Unix()))
 	return "0x" + hex.EncodeToString(sum[:])

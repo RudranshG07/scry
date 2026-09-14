@@ -8,10 +8,6 @@ import (
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
 
-// emptyStore stands in for a database so the handlers can be exercised without
-// one. It lives in the test binary on purpose: an in-memory store used to ship
-// in the store package, and anything that can serve markets nobody observed
-// eventually does.
 type emptyStore struct {
 	mu       sync.RWMutex
 	messages map[string][]domain.RoomMessage

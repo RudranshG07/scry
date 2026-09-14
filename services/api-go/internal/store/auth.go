@@ -20,7 +20,6 @@ const (
 
 var ErrNonceUnknown = errors.New("nonce is unknown, expired, or already used")
 
-// IssueNonce mints a one-time challenge for an address.
 func (s *Postgres) IssueNonce(ctx context.Context, address string) (string, error) {
 	nonce, err := token(16)
 	if err != nil {
@@ -38,8 +37,6 @@ func (s *Postgres) IssueNonce(ctx context.Context, address string) (string, erro
 	return nonce, nil
 }
 
-// ConsumeNonce spends a nonce once. The single guarded UPDATE is the mechanism:
-// separate check and mark would leave a gap for replay.
 func (s *Postgres) ConsumeNonce(ctx context.Context, nonce, address string) error {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE auth_nonces SET consumed_at = NOW()
@@ -54,8 +51,6 @@ func (s *Postgres) ConsumeNonce(ctx context.Context, nonce, address string) erro
 	return nil
 }
 
-// StartSession returns the bearer token and stores only its digest, so reading
-// the table cannot mint a cookie.
 func (s *Postgres) StartSession(ctx context.Context, address string) (string, time.Time, error) {
 	raw, err := token(32)
 	if err != nil {
@@ -74,7 +69,6 @@ func (s *Postgres) StartSession(ctx context.Context, address string) (string, ti
 	return raw, expires, nil
 }
 
-// AddressForSession returns who the caller is, or ErrNotFound.
 func (s *Postgres) AddressForSession(ctx context.Context, raw string) (string, error) {
 	var address string
 	err := s.pool.QueryRow(ctx, `
@@ -113,7 +107,6 @@ func token(size int) (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// Wallets send mixed case; one casing keeps session, nonce and position aligned.
 func normalise(address string) string {
 	return strings.ToLower(strings.TrimSpace(address))
 }
