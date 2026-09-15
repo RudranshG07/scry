@@ -13,6 +13,12 @@ contract PooledMarketTest {
     address constant BOB = address(0xB0B);
     address constant CARL = address(0xCAFE);
     uint64 constant LOCKS_AT = 2_000_000_000;
+    uint64 constant ENDS_AT = LOCKS_AT + 240;
+
+    // The market reads its limits from its factory; this test stands in for it.
+    bool public depositsPaused;
+    uint256 public maxPool = 10_000e6;
+    uint256 public maxStake = 1_000e6;
 
     function _build() internal {
         usdc = new SilentUSDC();
@@ -20,7 +26,7 @@ contract PooledMarketTest {
         ids[0] = "yes";
         ids[1] = "no";
         market = new PooledMarket(
-            address(this), address(usdc), RESOLVER, keccak256("rule"), "market-1", LOCKS_AT, ids
+            address(this), address(usdc), RESOLVER, keccak256("rule"), "market-1", LOCKS_AT, ENDS_AT, ids
         );
         vm.warp(LOCKS_AT - 100);
     }
@@ -29,6 +35,15 @@ contract PooledMarketTest {
         usdc.mint(who, amount);
         vm.startPrank(who);
         usdc.approve(address(market), amount);
+        market.deposit(outcome, amount);
+        vm.stopPrank();
+    }
+
+    function _expectStakeRefused(address who, bytes32 outcome, uint256 amount, bytes4 reason) internal {
+        usdc.mint(who, amount);
+        vm.startPrank(who);
+        usdc.approve(address(market), amount);
+        vm.expectRevert(reason);
         market.deposit(outcome, amount);
         vm.stopPrank();
     }
@@ -94,12 +109,19 @@ contract PooledMarketTest {
         // Counting has started; nobody has called lock() yet. The book must
         // still be shut, or a position could be taken against a running count.
         vm.warp(LOCKS_AT);
-        usdc.mint(BOB, 10e6);
-        vm.startPrank(BOB);
-        usdc.approve(address(market), 10e6);
-        vm.expectRevert(PooledMarket.WrongStatus.selector);
-        market.deposit("yes", 10e6);
-        vm.stopPrank();
+        _expectStakeRefused(BOB, "yes", 10e6, PooledMarket.WrongStatus.selector);
+    }
+
+    function testSettlementDoesNotWaitForAnyoneToCallLock() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        _stake(BOB, "no", 10e6);
+
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        market.resolve("yes", 5, keccak256("e"));
+
+        require(market.status() == ScryTypes.MarketStatus.Resolved, "resolved without lock()");
     }
 
     function testAnUnbackedWinnerRefundsEveryoneInsteadOfPayingNobody() public {
@@ -162,11 +184,52 @@ contract PooledMarketTest {
 
     function testUnknownOutcomeIsRejected() public {
         _build();
-        usdc.mint(ALICE, 10e6);
-        vm.startPrank(ALICE);
-        usdc.approve(address(market), 10e6);
-        vm.expectRevert(PooledMarket.UnknownOutcome.selector);
-        market.deposit("maybe", 10e6);
-        vm.stopPrank();
+        _expectStakeRefused(ALICE, "maybe", 10e6, PooledMarket.UnknownOutcome.selector);
+    }
+
+    function testAPausedMarketTakesNoDeposits() public {
+        _build();
+        depositsPaused = true;
+        _expectStakeRefused(ALICE, "yes", 10e6, PooledMarket.Paused.selector);
+    }
+
+    function testOneWalletCannotStakeAboveItsCapAcrossOutcomes() public {
+        _build();
+        maxStake = 50e6;
+        _stake(ALICE, "yes", 30e6);
+        _expectStakeRefused(ALICE, "no", 30e6, PooledMarket.StakeTooLarge.selector);
+    }
+
+    function testThePoolStopsTakingMoneyAtItsCap() public {
+        _build();
+        maxPool = 100e6;
+        _stake(ALICE, "yes", 60e6);
+        _expectStakeRefused(BOB, "no", 50e6, PooledMarket.PoolFull.selector);
+    }
+
+    function testAMarketNobodySettlesRefundsAfterADay() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+
+        vm.warp(ENDS_AT + 1 days - 1);
+        vm.expectRevert(PooledMarket.NotAbandoned.selector);
+        market.abandon();
+
+        vm.warp(ENDS_AT + 1 days);
+        market.abandon();
+        vm.prank(ALICE);
+        require(market.refund() == 10e6, "stake back");
+    }
+
+    function testASettledMarketCannotBeAbandoned() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        market.resolve("yes", 5, keccak256("e"));
+
+        vm.warp(ENDS_AT + 2 days);
+        vm.expectRevert(PooledMarket.WrongStatus.selector);
+        market.abandon();
     }
 }

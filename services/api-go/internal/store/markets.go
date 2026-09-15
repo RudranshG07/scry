@@ -14,12 +14,11 @@ import (
 
 const marketQuery = `
 	SELECT m.id, m.stream_id, s.category, s.name, s.region, m.question, m.status,
-	       m.chain_id, m.contract_address,
 	       m.claim_kind, m.claim_target, m.claim_options,
 	       m.opens_at, m.locks_at, m.observation_starts_at, m.observation_ends_at, m.challenge_ends_at,
 	       m.observed_value, m.winning_outcome_id,
 	       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
-	                 WHERE p.market_id = m.id), 0)::float8,
+	                 WHERE p.market_id = m.id), 0)::float8 / 1e6,
 	       COALESCE((SELECT SUM(c.event_count)::float8 * 60 / NULLIF(SUM(c.interval_seconds), 0)
 	                 FROM count_observations c
 	                 WHERE c.stream_id = m.stream_id
@@ -38,7 +37,6 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 
 	err := row.Scan(
 		&m.ID, &m.StreamID, &m.Category, &m.Location, &m.City, &m.Question, &m.Status,
-		&m.ChainID, &m.ContractAddress,
 		&m.Claim.Kind, &m.Claim.Target, &m.Claim.Options,
 		&opens, &locks, &starts, &ends, &challenge,
 		&m.ObservedValue, &m.WinningOutcomeID, &m.Pool,
@@ -123,12 +121,17 @@ func (s *Postgres) fill(ctx context.Context, ms []domain.Market) ([]domain.Marke
 	if err != nil {
 		return nil, err
 	}
+	deployed, err := s.deployments(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	for i := range ms {
 		m := &ms[i]
 		m.Outcomes = balance(outs[m.ID])
 		m.Trend = filled(trends[m.ID])
 		m.Observers = seen[m.ID]
+		m.Deployments = filled(deployed[m.ID])
 	}
 	return ms, nil
 }

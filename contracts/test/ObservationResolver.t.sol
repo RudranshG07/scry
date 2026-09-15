@@ -19,8 +19,14 @@ contract ObservationResolverTest {
     uint64 constant LOCKS_AT = 2_000_000_000;
     uint64 constant CHALLENGE = 600;
     bytes32 constant RULE_HASH = keccak256("rule");
+    address constant OPERATOR = address(0xC0FFEE);
     address constant ALICE = address(0xA11CE);
     address constant BOB = address(0xB0B);
+
+    // The market reads its limits from its factory; this test stands in for it.
+    bool public depositsPaused;
+    uint256 public maxPool = 10_000e6;
+    uint256 public maxStake = 1_000e6;
 
     function _build() internal {
         usdc = new SilentUSDC();
@@ -29,13 +35,13 @@ contract ObservationResolverTest {
         registry.setObserver(vm.addr(VERIFY_KEY), true);
         registry.setSignatureThreshold(2);
 
-        resolver = new ObservationResolver(address(this), address(registry), CHALLENGE);
+        resolver = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
 
         bytes32[] memory ids = new bytes32[](2);
         ids[0] = "yes";
         ids[1] = "no";
         market = new PooledMarket(
-            address(this), address(usdc), address(resolver), RULE_HASH, "market-1", LOCKS_AT, ids
+            address(this), address(usdc), address(resolver), RULE_HASH, "market-1", LOCKS_AT, LOCKS_AT + 240, ids
         );
 
         vm.warp(LOCKS_AT - 100);
@@ -95,6 +101,23 @@ contract ObservationResolverTest {
         resolver.propose(address(market), r, sigs);
     }
 
+    function testASignatureForAnotherDeploymentIsRefused() public {
+        _build();
+        ObservationResolver elsewhere = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        ScryTypes.ObservationResult memory r = Fixtures.result("market-1", RULE_HASH, 214, "yes");
+
+        // Both real observers, the right market and rule, but signed over the
+        // other resolver's domain, as a testnet deployment's would be.
+        bytes[] memory sigs = new bytes[](2);
+        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(PRIMARY_KEY, elsewhere.digest(r));
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(VERIFY_KEY, elsewhere.digest(r));
+        sigs[0] = abi.encodePacked(r1, s1, v1);
+        sigs[1] = abi.encodePacked(r2, s2, v2);
+
+        vm.expectRevert(ObservationResolver.NotAnObserver.selector);
+        resolver.propose(address(market), r, sigs);
+    }
+
     function testOneObserverCannotReachQuorumAlone() public {
         _build();
         ScryTypes.ObservationResult memory r = Fixtures.result("market-1", RULE_HASH, 214, "yes");
@@ -143,17 +166,28 @@ contract ObservationResolverTest {
         resolver.finalize(address(market));
     }
 
-    function testAChallengeVoidsAndRefundsRatherThanArguing() public {
+    function testTheOperatorCanVoidAProposedResult() public {
         _build();
         ScryTypes.ObservationResult memory r = Fixtures.result("market-1", RULE_HASH, 214, "yes");
         resolver.propose(address(market), r, _quorum(r));
 
-        vm.prank(BOB);
+        vm.prank(OPERATOR);
         resolver.challenge(address(market), "camera was frozen");
 
         require(market.status() == ScryTypes.MarketStatus.Invalid, "voided");
         vm.prank(ALICE);
         require(market.refund() == 100e6, "winner refunded, not paid");
+    }
+
+    function testALosingPositionCannotVoidTheResult() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result("market-1", RULE_HASH, 214, "yes");
+        resolver.propose(address(market), r, _quorum(r));
+
+        // Bob backed "no". If this worked for anyone, every loser would file it.
+        vm.prank(BOB);
+        vm.expectRevert(ObservationResolver.NotOperator.selector);
+        resolver.challenge(address(market), "sore loser");
     }
 
     function testAChallengeArrivingLateIsRefused() public {
@@ -162,9 +196,15 @@ contract ObservationResolverTest {
         resolver.propose(address(market), r, _quorum(r));
 
         vm.warp(block.timestamp + CHALLENGE);
-        vm.prank(BOB);
         vm.expectRevert(ObservationResolver.ChallengeClosed.selector);
         resolver.challenge(address(market), "too late");
+    }
+
+    function testOnlyTheAdminReplacesTheOperator() public {
+        _build();
+        vm.prank(OPERATOR);
+        vm.expectRevert(ObservationResolver.NotAdmin.selector);
+        resolver.setOperator(BOB);
     }
 
     function testAResultCannotBeProposedTwice() public {

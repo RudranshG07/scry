@@ -14,6 +14,7 @@ interface IPooledMarket {
     function lock() external;
     function resolve(bytes32 winningOutcomeId, uint256 observedValue, bytes32 evidenceRoot) external;
     function invalidate(bytes32 reason) external;
+    function abandon() external;
     function claim() external returns (uint256 amount);
     function refund() external returns (uint256 amount);
     function status() external view returns (ScryTypes.MarketStatus);

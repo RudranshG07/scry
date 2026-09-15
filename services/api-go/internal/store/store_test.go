@@ -63,27 +63,30 @@ func TestBalanceNil(t *testing.T) {
 
 func TestPositionState(t *testing.T) {
 	yes, no := "yes", "no"
+	created, proposed, finalized, voided := "Created", "Proposed", "Finalized", "Voided"
 
 	cases := []struct {
 		name              string
-		status, outcome   string
+		deployment        *string
+		outcome           string
 		won               *string
 		claimed, refunded float64
 		want              string
 	}{
-		{"open", "Open", "yes", nil, 0, 0, "Open"},
-		{"observing", "Observing", "yes", nil, 0, 0, "Open"},
-		{"invalid refunds everyone", "Invalid", "yes", nil, 0, 0, "Refundable"},
-		{"invalid, already paid out", "Invalid", "yes", nil, 0, 25, "Refunded"},
-		{"won", "Resolved", "yes", &yes, 0, 0, "Claimable"},
-		{"won and claimed", "Resolved", "yes", &yes, 40, 0, "Claimed"},
-		{"lost", "Resolved", "yes", &no, 0, 0, "Open"},
-		{"resolved without a winner", "Resolved", "yes", nil, 0, 0, "Open"},
+		{"never deployed", nil, "yes", nil, 0, 0, "Open"},
+		{"taking positions", &created, "yes", nil, 0, 0, "Open"},
+		{"resolved by the engine, not yet on chain", &created, "yes", &yes, 0, 0, "Open"},
+		{"won, still inside the challenge window", &proposed, "yes", &yes, 0, 0, "Open"},
+		{"voided refunds everyone", &voided, "yes", nil, 0, 0, "Refundable"},
+		{"voided, already refunded", &voided, "yes", nil, 0, 25, "Refunded"},
+		{"won", &finalized, "yes", &yes, 0, 0, "Claimable"},
+		{"won and claimed", &finalized, "yes", &yes, 40, 0, "Claimed"},
+		{"lost", &finalized, "yes", &no, 0, 0, "Open"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := positionState(c.status, c.outcome, c.won, c.claimed, c.refunded)
+			got := positionState(c.deployment, c.outcome, c.won, c.claimed, c.refunded)
 			if got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}

@@ -9,12 +9,21 @@ import {ScryTypes} from "./ScryTypes.sol";
 ///
 /// A proposal needs enough signatures from distinct registered observers over
 /// the exact result, and the result must name the market's rule hash, so a valid
-/// reading of one market cannot be replayed against another. A challenged market
-/// is voided rather than argued over.
+/// reading of one market cannot be replayed against another. The signed digest
+/// is EIP-712 and names this chain and this resolver, so a reading signed for a
+/// testnet deployment cannot be replayed against mainnet either.
+///
+/// Only the admin or the operator can challenge or void. An open challenge that
+/// voids the market for the price of gas is one every losing position would file,
+/// and no market would ever pay out. Voiding only ever refunds stakes, so the
+/// operator's hot key can hold it; registering observers stays with the admin.
 contract ObservationResolver is IObservationResolver {
     address public immutable admin;
+    address public operator;
     address public immutable observerRegistry;
     uint64 public immutable challengeWindow;
+
+    event OperatorChanged(address indexed previous, address indexed next);
 
     struct Proposal {
         bytes32 evidenceRoot;
@@ -27,6 +36,11 @@ contract ObservationResolver is IObservationResolver {
 
     mapping(address => Proposal) private _proposals;
 
+    bytes32 private constant DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant NAME_HASH = keccak256("Scry");
+    bytes32 private constant VERSION_HASH = keccak256("1");
+
     bytes32 private constant RESULT_TYPEHASH = keccak256(
         "ObservationResult(bytes32 marketId,uint256 observedValue,bytes32 winningOutcomeId,bytes32 evidenceRoot,bytes32 ruleHash,uint64 observedAt)"
     );
@@ -37,6 +51,7 @@ contract ObservationResolver is IObservationResolver {
 
     error InvalidConfiguration();
     error NotAdmin();
+    error NotOperator();
     error AlreadyProposed();
     error RuleMismatch();
     error TooFewSignatures();
@@ -47,13 +62,29 @@ contract ObservationResolver is IObservationResolver {
     error WrongStatus();
     error ResultMarkedInvalid();
 
-    constructor(address admin_, address observerRegistry_, uint64 challengeWindow_) {
-        if (admin_ == address(0) || observerRegistry_ == address(0) || challengeWindow_ == 0) {
+    constructor(address admin_, address operator_, address observerRegistry_, uint64 challengeWindow_) {
+        if (
+            admin_ == address(0) || operator_ == address(0) || observerRegistry_ == address(0)
+                || challengeWindow_ == 0
+        ) {
             revert InvalidConfiguration();
         }
         admin = admin_;
+        operator = operator_;
         observerRegistry = observerRegistry_;
         challengeWindow = challengeWindow_;
+    }
+
+    modifier onlyOperator() {
+        if (msg.sender != operator && msg.sender != admin) revert NotOperator();
+        _;
+    }
+
+    function setOperator(address next) external {
+        if (msg.sender != admin) revert NotAdmin();
+        if (next == address(0)) revert InvalidConfiguration();
+        emit OperatorChanged(operator, next);
+        operator = next;
     }
 
     function propose(address market, ScryTypes.ObservationResult calldata result, bytes[] calldata signatures)
@@ -78,7 +109,7 @@ contract ObservationResolver is IObservationResolver {
         emit ObservationProposed(market, result.evidenceRoot, result.observedValue, result.winningOutcomeId);
     }
 
-    function challenge(address market, bytes32 reason) external override {
+    function challenge(address market, bytes32 reason) external override onlyOperator {
         Proposal storage p = _proposals[market];
         if (p.status != ScryTypes.ObservationStatus.Proposed) revert WrongStatus();
         if (block.timestamp >= p.challengeEndsAt) revert ChallengeClosed();
@@ -100,8 +131,7 @@ contract ObservationResolver is IObservationResolver {
         emit ObservationFinalized(market, p.evidenceRoot);
     }
 
-    function invalidate(address market, bytes32 reason) external override {
-        if (msg.sender != admin) revert NotAdmin();
+    function invalidate(address market, bytes32 reason) external override onlyOperator {
         Proposal storage p = _proposals[market];
         if (p.status == ScryTypes.ObservationStatus.Final) revert WrongStatus();
 
@@ -119,8 +149,12 @@ contract ObservationResolver is IObservationResolver {
         return _proposals[market].challengeEndsAt;
     }
 
-    function digest(ScryTypes.ObservationResult calldata result) public pure returns (bytes32) {
-        return keccak256(
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(abi.encode(DOMAIN_TYPEHASH, NAME_HASH, VERSION_HASH, block.chainid, address(this)));
+    }
+
+    function digest(ScryTypes.ObservationResult calldata result) public view returns (bytes32) {
+        bytes32 structHash = keccak256(
             abi.encode(
                 RESULT_TYPEHASH,
                 result.marketId,
@@ -131,6 +165,7 @@ contract ObservationResolver is IObservationResolver {
                 result.observedAt
             )
         );
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
     }
 
     function _verify(ScryTypes.ObservationResult calldata result, bytes[] calldata signatures) private view {

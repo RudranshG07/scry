@@ -12,12 +12,13 @@ contract MarketFactoryTest {
     MarketFactory factory;
 
     address constant RESOLVER = address(0xBEEF);
+    address constant OPERATOR = address(0xC0FFEE);
     address constant ALICE = address(0xA11CE);
     uint64 constant LOCKS_AT = 2_000_000_000;
 
     function _build() internal {
         usdc = new SilentUSDC();
-        factory = new MarketFactory(address(this), address(usdc), RESOLVER);
+        factory = new MarketFactory(address(this), OPERATOR, address(usdc), RESOLVER, 10_000e6, 1_000e6);
         vm.warp(LOCKS_AT - 1000);
     }
 
@@ -30,6 +31,7 @@ contract MarketFactoryTest {
         require(factory.marketFor("market-1") == m, "indexed");
         require(PooledMarket(m).ruleHash() == r.ruleHash, "rule committed before anyone can enter");
         require(PooledMarket(m).locksAt() == LOCKS_AT, "window carried through");
+        require(PooledMarket(m).observationEndsAt() == r.observationEndsAt, "end of window carried through");
     }
 
     function testTheSameMarketCannotBeCreatedTwice() public {
@@ -73,6 +75,67 @@ contract MarketFactoryTest {
 
         vm.expectRevert(MarketFactory.TooFewOutcomes.selector);
         factory.createMarket(r, one, 0);
+    }
+
+    function testOnlyTheOperatorOrAdminCreatesMarkets() public {
+        _build();
+        ScryTypes.MarketRule memory r = Fixtures.rule("market-1", LOCKS_AT);
+
+        vm.prank(ALICE);
+        vm.expectRevert(MarketFactory.NotOperator.selector);
+        factory.createMarket(r, Fixtures.bands(180), 0);
+
+        vm.prank(OPERATOR);
+        require(factory.createMarket(r, Fixtures.bands(180), 0) != address(0), "operator creates");
+    }
+
+    function testTheOperatorCannotRaiseLimitsOrReplaceItself() public {
+        _build();
+        vm.prank(OPERATOR);
+        vm.expectRevert(MarketFactory.NotAdmin.selector);
+        factory.setLimits(1e12, 1e12);
+
+        vm.prank(OPERATOR);
+        vm.expectRevert(MarketFactory.NotAdmin.selector);
+        factory.setOperator(ALICE);
+    }
+
+    function testAStolenOperatorKeyCannotUndoAnEmergencyStop() public {
+        _build();
+        vm.prank(OPERATOR);
+        factory.pauseDeposits();
+
+        vm.prank(OPERATOR);
+        vm.expectRevert(MarketFactory.NotAdmin.selector);
+        factory.resumeDeposits();
+        require(factory.depositsPaused(), "still paused");
+
+        factory.resumeDeposits();
+        require(!factory.depositsPaused(), "admin resumed");
+    }
+
+    function testLimitsThatCouldNotHoldAStakeAreRefused() public {
+        _build();
+        vm.expectRevert(MarketFactory.InvalidConfiguration.selector);
+        factory.setLimits(100e6, 0);
+
+        vm.expectRevert(MarketFactory.InvalidConfiguration.selector);
+        factory.setLimits(100e6, 200e6);
+    }
+
+    function testLoweredLimitsReachMarketsAlreadyOpen() public {
+        _build();
+        ScryTypes.MarketRule memory r = Fixtures.rule("market-1", LOCKS_AT);
+        PooledMarket m = PooledMarket(factory.createMarket(r, Fixtures.bands(180), 0));
+
+        factory.setLimits(10_000e6, 20e6);
+
+        usdc.mint(ALICE, 50e6);
+        vm.startPrank(ALICE);
+        usdc.approve(address(m), 50e6);
+        vm.expectRevert(PooledMarket.StakeTooLarge.selector);
+        m.deposit("yes", 50e6);
+        vm.stopPrank();
     }
 
     function testSeedLiquidityIsPaidOutToWinnersNotStranded() public {

@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RudranshG07/scry/services/api-go/internal/chain"
 	"github.com/RudranshG07/scry/services/api-go/internal/config"
 	"github.com/RudranshG07/scry/services/api-go/internal/engine"
 	"github.com/RudranshG07/scry/services/api-go/internal/httpapi"
+	"github.com/RudranshG07/scry/services/api-go/internal/onchain"
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
 
@@ -35,6 +37,28 @@ func main() {
 		engineCtx, stopEngine := context.WithCancel(context.Background())
 		defer stopEngine()
 		go engine.New(postgres.Pool(), slog.Default(), settings.ObserverPairs).Run(engineCtx)
+
+		if len(settings.Chains) == 0 {
+			slog.Warn("SCRY_CHAINS is unset, so no market takes real positions.")
+		} else {
+			signer, err := chain.NewSigner(settings.OperatorKey)
+			if err != nil {
+				slog.Error("SCRY_CHAINS is set but SCRY_OPERATOR_KEY is not a usable key", "error", err)
+				os.Exit(1)
+			}
+			for _, deployment := range settings.Chains {
+				worker := onchain.New(postgres.Pool(), slog.Default(), signer, deployment)
+				checking, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				err := worker.Check(checking)
+				cancel()
+				if err != nil {
+					slog.Error("chain is not ready to settle markets", "chain", deployment.ID, "error", err)
+					os.Exit(1)
+				}
+				slog.Info("settling markets on chain", "chain", deployment.ID, "operator", signer.Address)
+				go worker.Run(engineCtx)
+			}
+		}
 	} else {
 		slog.Error("SCRY_DATABASE_URL is unset, and there is nothing to serve without it.")
 		os.Exit(1)

@@ -9,8 +9,6 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-const gasLimit uint64 = 300_000
-
 type Signer struct {
 	key     *secp256k1.PrivateKey
 	Address string
@@ -61,11 +59,12 @@ func rlpInt(value *big.Int) []byte {
 }
 
 type Call struct {
-	To      string
-	Data    []byte
-	Nonce   uint64
-	Gas     *big.Int
-	ChainID *big.Int
+	To       string
+	Data     []byte
+	Nonce    uint64
+	Gas      *big.Int
+	GasLimit uint64
+	ChainID  *big.Int
 }
 
 func (s *Signer) Sign(call Call) ([]byte, error) {
@@ -77,7 +76,7 @@ func (s *Signer) Sign(call Call) ([]byte, error) {
 	fields := [][]byte{
 		rlpInt(new(big.Int).SetUint64(call.Nonce)),
 		rlpInt(call.Gas),
-		rlpInt(new(big.Int).SetUint64(gasLimit)),
+		rlpInt(new(big.Int).SetUint64(call.GasLimit)),
 		rlpBytes(to),
 		rlpInt(nil),
 		rlpBytes(call.Data),
@@ -101,6 +100,9 @@ func (s *Signer) Sign(call Call) ([]byte, error) {
 	)...), nil
 }
 
+// Submit estimates gas rather than assuming it. A fixed 300k covered the
+// registry calls this was first tested with and not createMarket, which deploys
+// a whole market contract.
 func (s *Signer) Submit(ctx context.Context, client *Client, to string, data []byte) (string, error) {
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
@@ -114,8 +116,17 @@ func (s *Signer) Submit(ctx context.Context, client *Client, to string, data []b
 	if err != nil {
 		return "", err
 	}
+	// A quarter over the node's suggestion, so a transaction is not left pending
+	// behind a fee that moved while it was being signed.
+	gas = new(big.Int).Div(new(big.Int).Mul(gas, big.NewInt(5)), big.NewInt(4))
+	estimate, err := client.EstimateGas(ctx, s.Address, to, data)
+	if err != nil {
+		return "", err
+	}
 
-	signed, err := s.Sign(Call{To: to, Data: data, Nonce: nonce, Gas: gas, ChainID: chainID})
+	signed, err := s.Sign(Call{
+		To: to, Data: data, Nonce: nonce, Gas: gas, GasLimit: estimate + estimate/5, ChainID: chainID,
+	})
 	if err != nil {
 		return "", err
 	}

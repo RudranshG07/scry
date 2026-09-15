@@ -47,11 +47,12 @@ contract LocalMarket {
 
         market = factory.createMarket(rule, outcomes, 0);
 
-        // 250 USDC on yes, 100 on no. Six decimals, as USDC has everywhere.
-        usdc.mint(msg.sender, 350_000_000);
+        // 60 USDC on yes, 40 on no: one wallet, inside the default 100 USDC stake
+        // limit. Six decimals, as USDC has everywhere.
+        usdc.mint(msg.sender, 100_000_000);
         usdc.approve(market, type(uint256).max);
-        PooledMarket(market).deposit(keccak256("yes"), 250_000_000);
-        PooledMarket(market).deposit(keccak256("no"), 100_000_000);
+        PooledMarket(market).deposit(keccak256("yes"), 60_000_000);
+        PooledMarket(market).deposit(keccak256("no"), 40_000_000);
 
         vm.stopBroadcast();
 

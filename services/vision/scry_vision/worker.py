@@ -224,7 +224,7 @@ def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
 
 def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
         observer: str, role: str, cap: float, poll: float, source: str | None = None,
-        relay: str | None = None) -> int:
+        relay: str | None = None, ledger=None) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
     import scry_vision  # noqa: F401  registers the observers
     from .claims import Claim, observer_for
@@ -362,6 +362,10 @@ def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
 
         status, body = submit(api, market["id"], observer, role, result)
         print(f"  submitted -> {status} {body}", flush=True)
+        # Kept for when the result comes back to be signed, by which time this
+        # loop is counting the next window and the reading is long gone.
+        if status == 202 and ledger is not None:
+            ledger.record(market["id"], result["count"])
 
         # A refusal the market itself will never take back is finished with, not
         # worth retrying. Counting a whole window again to be told the same thing
@@ -399,6 +403,11 @@ def main() -> int:
     if not os.environ.get("SCRY_OBSERVER_KEY"):
         parser.error("set SCRY_OBSERVER_KEY to this observer's private key")
 
+    from .attest import Ledger, start
+
+    ledger = Ledger.for_observer(args.observer, os.environ.get("SCRY_OBSERVER_LEDGER"))
+    start(args.api, args.observer, os.environ["SCRY_OBSERVER_KEY"], ledger)
+
     camera = args.camera
     if args.youtube:
         from .probe import resolve
@@ -413,7 +422,7 @@ def main() -> int:
             parser.error("--camera and --youtube name one camera, so they need --stream")
         try:
             return run(args.api, None, None, args.market, args.observer,
-                       args.role, args.max_seconds, args.poll, relay=args.relay)
+                       args.role, args.max_seconds, args.poll, relay=args.relay, ledger=ledger)
         except StreamMismatch as error:
             print(f"refusing to report: {error}", file=sys.stderr)
             return 2
@@ -439,7 +448,7 @@ def main() -> int:
     try:
         return run(args.api, args.stream, camera, args.market, args.observer,
                    args.role, args.max_seconds, args.poll,
-                   source=args.youtube, relay=args.relay)
+                   source=args.youtube, relay=args.relay, ledger=ledger)
     except StreamMismatch as error:
         print(f"refusing to report: {error}", file=sys.stderr)
         return 2

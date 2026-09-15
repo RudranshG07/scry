@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/RudranshG07/scry/services/api-go/internal/config"
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 	"github.com/RudranshG07/scry/services/api-go/internal/store"
 )
@@ -33,6 +34,7 @@ type Server struct {
 	secureCookies  bool
 	operatorToken  string
 	observers      map[string]string
+	chains         []config.Chain
 	log            *slog.Logger
 }
 
@@ -47,6 +49,7 @@ func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Se
 		secureCookies:  strings.HasPrefix(origins[0], "https://"),
 		operatorToken:  strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
 		observers:      registeredObservers(os.Getenv("SCRY_OBSERVERS")),
+		chains:         config.Chains(),
 		log:            slog.Default(),
 	}
 	server.routes()
@@ -71,6 +74,10 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /v1/streams/{id}/qualification", server.postQualification)
 	server.mux.HandleFunc("GET /v1/markets/{id}/stream", server.marketStream)
 	server.mux.HandleFunc("POST /v1/markets/{id}/observations", server.postObservation)
+	server.mux.HandleFunc("GET /v1/chains", server.getChains)
+	server.mux.HandleFunc("POST /v1/markets/{id}/deployments", server.postDeployment)
+	server.mux.HandleFunc("POST /v1/markets/{id}/attestations", server.postAttestation)
+	server.mux.HandleFunc("GET /v1/observers/{observer}/settlements", server.getSettlements)
 	server.mux.HandleFunc("POST /v1/auth/nonce", server.postNonce)
 	server.mux.HandleFunc("POST /v1/auth/session", server.postSession)
 	server.mux.HandleFunc("GET /v1/auth/session", server.getSession)

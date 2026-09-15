@@ -1,6 +1,7 @@
 pragma solidity 0.8.30;
 
 import {IERC20, SafeTransfer} from "./IERC20.sol";
+import {IMarketFactory} from "./interfaces/IMarketFactory.sol";
 import {IPooledMarket} from "./interfaces/IPooledMarket.sol";
 import {ScryTypes} from "./ScryTypes.sol";
 
@@ -10,12 +11,18 @@ import {ScryTypes} from "./ScryTypes.sol";
 contract PooledMarket is IPooledMarket {
     using SafeTransfer for IERC20;
 
+    /// @notice How long after the observation window a market may sit unsettled
+    /// before anyone can void it. Money must never depend on the operator staying
+    /// up: if it disappears, every stake comes back rather than staying here.
+    uint64 public constant ABANDON_AFTER = 1 days;
+
     address public immutable factory;
     IERC20 public immutable collateral;
     address public immutable resolver;
     bytes32 public immutable override ruleHash;
     bytes32 public immutable marketId;
     uint64 public immutable locksAt;
+    uint64 public immutable observationEndsAt;
 
     ScryTypes.MarketStatus private _status;
     bytes32 public winningOutcomeId;
@@ -41,6 +48,10 @@ contract PooledMarket is IPooledMarket {
     error ZeroAmount();
     error NothingToClaim();
     error AlreadySettled();
+    error Paused();
+    error PoolFull();
+    error StakeTooLarge();
+    error NotAbandoned();
 
     constructor(
         address factory_,
@@ -49,11 +60,13 @@ contract PooledMarket is IPooledMarket {
         bytes32 ruleHash_,
         bytes32 marketId_,
         uint64 locksAt_,
+        uint64 observationEndsAt_,
         bytes32[] memory ids
     ) {
         if (
             factory_ == address(0) || collateral_ == address(0) || resolver_ == address(0)
                 || ruleHash_ == bytes32(0) || marketId_ == bytes32(0) || ids.length < 2
+                || observationEndsAt_ < locksAt_
         ) {
             revert InvalidConfiguration();
         }
@@ -64,6 +77,7 @@ contract PooledMarket is IPooledMarket {
         ruleHash = ruleHash_;
         marketId = marketId_;
         locksAt = locksAt_;
+        observationEndsAt = observationEndsAt_;
         _status = ScryTypes.MarketStatus.Open;
 
         for (uint256 i = 0; i < ids.length; i++) {
@@ -81,6 +95,11 @@ contract PooledMarket is IPooledMarket {
         if (block.timestamp >= locksAt) revert WrongStatus();
         if (!_isOutcome[outcomeId]) revert UnknownOutcome();
         if (amount == 0) revert ZeroAmount();
+
+        IMarketFactory limits = IMarketFactory(factory);
+        if (limits.depositsPaused()) revert Paused();
+        if (totalPool - sponsorPool + amount > limits.maxPool()) revert PoolFull();
+        if (_staked[msg.sender] + amount > limits.maxStake()) revert StakeTooLarge();
 
         collateral.pull(msg.sender, address(this), amount);
 
@@ -127,7 +146,11 @@ contract PooledMarket is IPooledMarket {
 
     function resolve(bytes32 outcomeId, uint256 value, bytes32 root) external override {
         if (msg.sender != resolver) revert NotResolver();
-        if (_status != ScryTypes.MarketStatus.Observing) revert WrongStatus();
+        // Past locksAt the book is already shut, so settlement does not wait on
+        // somebody having paid gas for lock().
+        bool locked = _status == ScryTypes.MarketStatus.Observing
+            || (_status == ScryTypes.MarketStatus.Open && block.timestamp >= locksAt);
+        if (!locked) revert WrongStatus();
         if (!_isOutcome[outcomeId]) revert UnknownOutcome();
 
         // Nothing backed the winner, so there is no pool to divide against.
@@ -152,6 +175,15 @@ contract PooledMarket is IPooledMarket {
         }
         _status = ScryTypes.MarketStatus.Invalid;
         emit MarketInvalidated(reason);
+    }
+
+    function abandon() external override {
+        if (_status != ScryTypes.MarketStatus.Open && _status != ScryTypes.MarketStatus.Observing) {
+            revert WrongStatus();
+        }
+        if (block.timestamp < uint256(observationEndsAt) + ABANDON_AFTER) revert NotAbandoned();
+        _status = ScryTypes.MarketStatus.Invalid;
+        emit MarketInvalidated("abandoned");
     }
 
     function claim() external override returns (uint256 amount) {

@@ -17,6 +17,11 @@ interface VmLike {
 ///
 /// The USDC address is chosen by chain id rather than passed in: escrowing the
 /// wrong token does not show up until someone tries to withdraw.
+///
+/// SCRY_ADMIN should be a Safe. It alone registers observers, and whoever
+/// registers observers can settle every market. SCRY_OPERATOR is the server's
+/// hot key: it creates markets and can void or pause them, none of which moves
+/// money anywhere but back to the people who staked it.
 contract Deploy {
     VmLike constant vm = VmLike(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
@@ -59,8 +64,12 @@ contract Deploy {
         )
     {
         address admin = vm.envAddress("SCRY_ADMIN");
+        address operator = vm.envAddress("SCRY_OPERATOR");
         uint8 threshold = uint8(vm.envOr("SCRY_SIGNATURE_THRESHOLD", uint256(2)));
         uint64 challengeWindow = uint64(vm.envOr("SCRY_CHALLENGE_WINDOW", uint256(10 minutes)));
+        // Six decimals. Low on purpose until the contracts have been audited.
+        uint256 maxPool = vm.envOr("SCRY_MAX_POOL", uint256(1_000e6));
+        uint256 maxStake = vm.envOr("SCRY_MAX_STAKE", uint256(100e6));
 
         vm.startBroadcast();
 
@@ -71,8 +80,8 @@ contract Deploy {
         address collateral = collateralFor(block.chainid);
 
         registry = new ObserverRegistry(admin, threshold);
-        resolver = new ObservationResolver(admin, address(registry), challengeWindow);
-        factory = new MarketFactory(admin, collateral, address(resolver));
+        resolver = new ObservationResolver(admin, operator, address(registry), challengeWindow);
+        factory = new MarketFactory(admin, operator, collateral, address(resolver), maxPool, maxStake);
         reputation = new ReputationCheckpoint(admin);
 
         vm.stopBroadcast();

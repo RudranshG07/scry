@@ -34,9 +34,8 @@ type Market struct {
 	Baseline            float64         `json:"baseline"`
 	Observers           int             `json:"observers"`
 	ObserversRequired   int             `json:"observersRequired"`
-	ChainID             int64           `json:"chainId"`
 	Claim               Claim           `json:"claim"`
-	ContractAddress     *string         `json:"contractAddress,omitempty"`
+	Deployments         []Deployment    `json:"deployments"`
 	OpensAt             string          `json:"opensAt"`
 	LocksAt             string          `json:"locksAt"`
 	ObservationStartsAt string          `json:"observationStartsAt"`
@@ -46,6 +45,42 @@ type Market struct {
 	WinningOutcomeID    *string         `json:"winningOutcomeId,omitempty"`
 	Outcomes            []MarketOutcome `json:"outcomes"`
 	Trend               []float64       `json:"trend"`
+}
+
+// Deployment is a market's contract on one chain. A market is deployed to a
+// chain when somebody first wants to take a position there.
+type Deployment struct {
+	ChainID         int64   `json:"chainId"`
+	ContractAddress *string `json:"contractAddress,omitempty"`
+	State           string  `json:"state"`
+}
+
+type OutcomeBand struct {
+	ID      string `json:"id"`
+	Minimum *int64 `json:"minimum"`
+	Maximum *int64 `json:"maximum"`
+}
+
+// Settlement is the result one deployment settles on, as its observers are
+// asked to sign it.
+type Settlement struct {
+	MarketID         string        `json:"marketId"`
+	ChainID          int64         `json:"chainId"`
+	ContractAddress  string        `json:"contractAddress"`
+	Resolver         string        `json:"resolver"`
+	ObservedValue    int64         `json:"observedValue"`
+	WinningOutcomeID string        `json:"winningOutcomeId"`
+	EvidenceRoot     string        `json:"evidenceRoot"`
+	RuleHash         string        `json:"ruleHash"`
+	ObservedAt       int64         `json:"observedAt"`
+	Outcomes         []OutcomeBand `json:"outcomes"`
+	Digest           string        `json:"digest"`
+}
+
+type Attestation struct {
+	ObserverID string `json:"observerId"`
+	ChainID    int64  `json:"chainId"`
+	Signature  string `json:"signature"`
 }
 
 type StreamSource struct {
@@ -113,6 +148,8 @@ type ProofOfObservation struct {
 type Position struct {
 	ID              string  `json:"id"`
 	MarketID        string  `json:"marketId"`
+	ChainID         int64   `json:"chainId"`
+	ContractAddress *string `json:"contractAddress,omitempty"`
 	Question        string  `json:"question"`
 	OutcomeLabel    string  `json:"outcomeLabel"`
 	Amount          float64 `json:"amount"`

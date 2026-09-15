@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -103,6 +105,100 @@ func (c *Client) GasPrice(ctx context.Context) (*big.Int, error) {
 		return nil, err
 	}
 	return quantity(raw)
+}
+
+func (c *Client) BlockNumber(ctx context.Context) (uint64, error) {
+	raw, err := c.call(ctx, "eth_blockNumber")
+	if err != nil {
+		return 0, err
+	}
+	value, err := quantity(raw)
+	if err != nil {
+		return 0, err
+	}
+	return value.Uint64(), nil
+}
+
+type Log struct {
+	Address          string
+	Topics           []string
+	Data             []byte
+	BlockNumber      uint64
+	BlockHash        string
+	TransactionHash  string
+	TransactionIndex uint64
+	LogIndex         uint64
+	Removed          bool
+}
+
+func (c *Client) Logs(ctx context.Context, from, to uint64, addresses, topics []string) ([]Log, error) {
+	raw, err := c.call(ctx, "eth_getLogs", map[string]any{
+		"fromBlock": fmt.Sprintf("0x%x", from),
+		"toBlock":   fmt.Sprintf("0x%x", to),
+		"address":   addresses,
+		"topics":    [][]string{topics},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var wire []struct {
+		Address          string   `json:"address"`
+		Topics           []string `json:"topics"`
+		Data             string   `json:"data"`
+		BlockNumber      string   `json:"blockNumber"`
+		BlockHash        string   `json:"blockHash"`
+		TransactionHash  string   `json:"transactionHash"`
+		TransactionIndex string   `json:"transactionIndex"`
+		LogIndex         string   `json:"logIndex"`
+		Removed          bool     `json:"removed"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("eth_getLogs: %w", err)
+	}
+
+	logs := make([]Log, 0, len(wire))
+	for _, entry := range wire {
+		data, err := unhex(entry.Data)
+		if err != nil {
+			return nil, fmt.Errorf("log data: %w", err)
+		}
+		block, blockErr := hexUint(entry.BlockNumber)
+		index, indexErr := hexUint(entry.LogIndex)
+		position, positionErr := hexUint(entry.TransactionIndex)
+		if err := errors.Join(blockErr, indexErr, positionErr); err != nil {
+			return nil, fmt.Errorf("log position: %w", err)
+		}
+		logs = append(logs, Log{
+			Address:          entry.Address,
+			Topics:           entry.Topics,
+			Data:             data,
+			BlockNumber:      block,
+			BlockHash:        entry.BlockHash,
+			TransactionHash:  entry.TransactionHash,
+			TransactionIndex: position,
+			LogIndex:         index,
+			Removed:          entry.Removed,
+		})
+	}
+	return logs, nil
+}
+
+func hexUint(text string) (uint64, error) {
+	return strconv.ParseUint(strings.TrimPrefix(text, "0x"), 16, 64)
+}
+
+func (c *Client) EstimateGas(ctx context.Context, from, to string, data []byte) (uint64, error) {
+	raw, err := c.call(ctx, "eth_estimateGas", map[string]string{
+		"from": from, "to": to, "data": "0x" + hexOf(data),
+	})
+	if err != nil {
+		return 0, err
+	}
+	value, err := quantity(raw)
+	if err != nil {
+		return 0, err
+	}
+	return value.Uint64(), nil
 }
 
 func (c *Client) Send(ctx context.Context, signed []byte) (string, error) {
