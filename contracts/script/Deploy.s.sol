@@ -9,6 +9,7 @@ import {DevUSDC} from "../src/DevUSDC.sol";
 interface VmLike {
     function envAddress(string calldata name) external view returns (address);
     function envOr(string calldata name, uint256 fallbackTo) external view returns (uint256);
+    function envOr(string calldata name, address fallbackTo) external view returns (address);
     function startBroadcast() external;
     function stopBroadcast() external;
 }
@@ -70,6 +71,10 @@ contract Deploy {
         // Six decimals. Low on purpose until the contracts have been audited.
         uint256 maxPool = vm.envOr("SCRY_MAX_POOL", uint256(1_000e6));
         uint256 maxStake = vm.envOr("SCRY_MAX_STAKE", uint256(100e6));
+        // Polygon has two USDCs: bridged USDC.e, which Polymarket settles in, and
+        // Circle's native USDC (0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359), which
+        // exchanges withdraw. A deployment accepts only the one it was given.
+        address named = vm.envOr("SCRY_COLLATERAL", address(0));
 
         vm.startBroadcast();
 
@@ -77,7 +82,7 @@ contract Deploy {
         // computed an address in simulation: nothing was deployed, and the
         // factory happily stored a collateral that was not a contract. The
         // first deposit reverted on a call to nothing.
-        address collateral = collateralFor(block.chainid);
+        address collateral = named == address(0) ? collateralFor(block.chainid) : named;
 
         registry = new ObserverRegistry(admin, threshold);
         resolver = new ObservationResolver(admin, operator, address(registry), challengeWindow);

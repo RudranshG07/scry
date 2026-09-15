@@ -104,6 +104,12 @@ def inspect(url: str, seconds: float = 45, claim: dict | None = None,
                        f"only {net['realtime_factor']}x real time; needs {MIN_REALTIME}x",
                        realtime=net["realtime_factor"])
 
+    # Nothing a phrase is settled on is in the picture. A streamer walks, cuts
+    # and pans, and every vision check below refuses them for it; the only thing
+    # worth asking of a talking stream is whether the words can be heard.
+    if (claim or {}).get("kind") == "phrase":
+        return _listen_for(playlist, claim, seconds, window, net["realtime_factor"], url)
+
     import time
 
     import cv2
@@ -239,6 +245,35 @@ def settle_near(value: float) -> int:
         return max(1, round(value))
     step = 5 if value < 100 else 10 if value < 500 else 25
     return int(step * round(value / step))
+
+
+def _listen_for(playlist: str, claim: dict, seconds: float, window: float,
+                realtime: float, source: str = "") -> Verdict:
+    """Qualify a phrase claim on what is said, and set its bar from how often.
+
+    Speech without the phrase still qualifies. Its bar settles at one, and
+    "will they say it at all" is a fair question to put to a stream.
+    """
+    from .claims import Claim
+    from .phrases import Phrases
+
+    target = (claim.get("target") or "").strip()
+    listening = Claim(stream_id="inspection", kind="phrase", target=target,
+                      options=claim.get("options") or {})
+    reading = Phrases().observe(playlist, listening, seconds, "primary_vision")
+
+    where = source or playlist
+    if reading.detail.get("reason"):
+        return Verdict(where, False, f"could not listen: {reading.detail['reason']}", realtime=realtime)
+    if not reading.detail.get("words"):
+        return Verdict(where, False, "no speech was heard on this stream", counts="mentions",
+                       realtime=realtime)
+
+    expected = reading.count * (window / seconds) if seconds > 0 else 0.0
+    return Verdict(where, True,
+                   f'"{target}" said {reading.count} times in {seconds:.0f}s, about {expected:.0f} a window',
+                   counts="mentions", subjects=float(reading.count), threshold=settle_near(expected),
+                   realtime=realtime)
 
 
 def _too_quiet(playlist: str, claim: dict | None, occupancy: float,

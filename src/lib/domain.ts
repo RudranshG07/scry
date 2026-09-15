@@ -10,13 +10,54 @@ export const marketStatuses = [
 ] as const;
 
 export type MarketStatus = (typeof marketStatuses)[number];
-export type Category = "Traffic" | "Parking" | "Queues" | "Operations";
+export type Category = "Traffic" | "Parking" | "Queues" | "Operations" | "Creators";
+
+export type ClaimKind = "crossings" | "objects" | "phrase";
+
+export type StreamSubmission = {
+  sourceUrl: string;
+  name: string;
+  region?: string;
+  timezone?: string;
+  category?: Category;
+  claim: { kind: ClaimKind; target: string; options?: Record<string, unknown> };
+};
+
+export type StreamStatus = {
+  id: string;
+  name: string;
+  status: "Candidate" | "Qualified" | "Suspended" | "Retired";
+  sourceUrl: string;
+  claim: { kind: ClaimKind; target: string };
+  reason?: string;
+  threshold?: number;
+  inspectedAt?: string;
+};
 
 export type MarketOutcome = {
   id: string;
   label: string;
   probability: number;
   returnRate: number;
+};
+
+export const deploymentStates = ["Requested", "Created", "Proposed", "Finalized", "Voided", "Unfunded", "Failed"] as const;
+
+export type DeploymentState = (typeof deploymentStates)[number];
+
+/** A market's contract on one chain. Each is a pool of its own: a stake on one
+ * chain is paid only from what was staked on that chain. */
+export type MarketDeployment = {
+  chainId: number;
+  contractAddress?: `0x${string}`;
+  state: DeploymentState;
+  staked?: Record<string, number>;
+};
+
+export type SettlementChain = {
+  chainId: number;
+  factory: `0x${string}`;
+  resolver: `0x${string}`;
 };
 
 export type Market = {
@@ -34,8 +75,7 @@ export type Market = {
   baseline: number;
   observers: number;
   observersRequired: number;
-  chainId: number;
-  contractAddress?: `0x${string}`;
+  deployments: MarketDeployment[];
   opensAt: string;
   locksAt: string;
   observationStartsAt: string;
@@ -81,6 +121,8 @@ export type PositionState = "Open" | "Claimable" | "Claimed" | "Refundable" | "R
 export type Position = {
   id: string;
   marketId: string;
+  chainId: number;
+  contractAddress?: `0x${string}`;
   question: string;
   outcomeLabel: string;
   amount: number;

@@ -247,3 +247,38 @@ class MovingViewTest(unittest.TestCase):
         with mock.patch("scry_vision.capture.open_capture") as capture:
             capture.return_value.isOpened.return_value = False
             self.assertEqual(_has_moved("playlist", "d1d1d1d094f4ee0d"), 0)
+
+
+class PhraseQualificationTest(unittest.TestCase):
+    """A talking stream is judged on what is said, never on what is in frame."""
+
+    CLAIM = {"kind": "phrase", "target": "guys"}
+
+    def listen(self, reading):
+        from scry_vision.qualify import _listen_for
+
+        with mock.patch("scry_vision.phrases.Phrases.observe", return_value=reading):
+            return _listen_for("https://example.com/live.m3u8", self.CLAIM, 45, 240, 3.0,
+                               "https://www.youtube.com/watch?v=live")
+
+    def test_the_bar_is_set_from_how_often_the_phrase_came_up(self):
+        verdict = self.listen(Reading(3, [], uptime=1.0, detail={"words": 140}))
+        self.assertTrue(verdict.usable)
+        self.assertEqual(verdict.threshold, settle_near(3 * 240 / 45))
+        self.assertEqual(verdict.counts, "mentions")
+
+    def test_a_stream_nobody_is_talking_on_is_refused(self):
+        verdict = self.listen(Reading(0, [], detail={"words": 0}))
+        self.assertFalse(verdict.usable)
+        self.assertIn("no speech", verdict.reason)
+
+    def test_speech_without_the_phrase_still_opens_a_market_on_it(self):
+        verdict = self.listen(Reading(0, [], uptime=1.0, detail={"words": 90}))
+        self.assertTrue(verdict.usable)
+        self.assertEqual(verdict.threshold, 1)
+
+    def test_a_stream_with_no_audio_is_refused_with_the_reason(self):
+        verdict = self.listen(Reading(0, [], detail={"reason": "no audio track"}))
+        self.assertFalse(verdict.usable)
+        self.assertIn("no audio track", verdict.reason)
+

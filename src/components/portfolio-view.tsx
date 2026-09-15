@@ -2,11 +2,14 @@
 
 import { ArrowRight, CircleAlert, Coins, Crosshair, Inbox, LoaderCircle, RefreshCw, WalletCards } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { useWallet } from "@/components/wallet-provider";
 import { useExperience } from "@/components/experience-provider";
+import { busyStages, useSettle } from "@/hooks/use-position";
 import { useMarkets, usePortfolio } from "@/hooks/use-scry";
 import { formatUsdc } from "@/lib/format";
+import { networkFor } from "@/lib/networks";
 
 const positionTone: Record<string, string> = {
   Claimable: "bg-accent/12 text-accent",
@@ -25,6 +28,11 @@ export function PortfolioView() {
   // on any real market resolved to nothing and rendered as a blank row.
   const { data: markets } = useMarkets();
   const state = !wallet.isConnected ? "idle" : status;
+  const settlement = useSettle();
+  const [settled, setSettled] = useState<string[]>([]);
+  // A refund returns everything one wallet staked in a market, so it is offered
+  // once per market and chain however many outcomes the wallet backed there.
+  const offered = new Set<string>();
 
   return (
     <div className="min-h-screen">
@@ -90,8 +98,7 @@ export function PortfolioView() {
 
         {wallet.isConnected && state === "ready" && portfolio && (
           <>
-            <section className="mt-8 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-card border border-border bg-surface p-5"><p className="text-xs text-muted-foreground">USDC balance</p><p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatUsdc(portfolio.balance)}</p></div>
+            <section className="mt-8 grid gap-3 sm:grid-cols-2">
               <div className="rounded-card border border-border bg-surface p-5"><p className="text-xs text-muted-foreground">Total positioned</p><p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatUsdc(portfolio.totalPositioned)}</p></div>
               <div className="rounded-card border border-accent/30 bg-accent/8 p-5"><p className="text-xs text-muted-foreground">Claimable</p><p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-accent">{formatUsdc(portfolio.claimable)}</p></div>
             </section>
@@ -103,12 +110,44 @@ export function PortfolioView() {
               <section className="mt-4 rounded-card border border-border bg-surface p-4 sm:p-5">
                 <div className="flex items-center gap-2"><Coins className="size-5 text-ring" aria-hidden="true" /><h2 className="text-lg font-semibold">Your positions</h2></div>
                 <div className="mt-4 grid gap-3">
-                  {portfolio.positions.map((position) => (
-                    <article className="grid gap-4 rounded-card bg-surface-raised p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={position.id}>
-                      <div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${positionTone[position.state] ?? positionTone.Open}`}>{position.state}</span><span className="text-xs text-muted-foreground">{position.outcomeLabel}</span></div><h3 className="mt-3 text-sm font-semibold">{position.question}</h3><p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">{formatUsdc(position.amount)} positioned · {formatUsdc(position.estimatedReturn)} {position.state === "Refundable" ? "refundable" : "estimated"}</p></div>
-                      <Link className="button-secondary" href={`/markets/${position.marketId}`}>View market<ArrowRight className="size-4" aria-hidden="true" /></Link>
-                    </article>
-                  ))}
+                  {portfolio.positions.map((position) => {
+                    const pool = `${position.marketId}:${position.chainId}`;
+                    const action = position.state === "Claimable" ? "claim" : position.state === "Refundable" && !offered.has(pool) ? "refund" : null;
+                    if (action) offered.add(pool);
+                    const done = settled.includes(pool);
+                    const active = settlement.state.positionId === position.id;
+                    const working = active && busyStages.includes(settlement.state.stage);
+                    const network = networkFor(position.chainId)?.name ?? `Chain ${position.chainId}`;
+                    return (
+                      <article className="grid gap-4 rounded-card bg-surface-raised p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={position.id}>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${positionTone[position.state] ?? positionTone.Open}`}>{position.state}</span><span className="text-xs text-muted-foreground">{position.outcomeLabel} · {network}</span></div>
+                          <h3 className="mt-3 text-sm font-semibold">{position.question}</h3>
+                          <p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">{formatUsdc(position.amount)} positioned · {formatUsdc(position.estimatedReturn)} {position.state === "Refundable" ? "refundable" : position.state === "Claimable" ? "to claim" : "estimated"}</p>
+                          {active && settlement.state.message && (
+                            <p className={`mt-2 text-xs ${settlement.state.stage === "failed" ? "text-danger" : "text-accent"}`} role={settlement.state.stage === "failed" ? "alert" : "status"}>{settlement.state.message}</p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {action && !done && (
+                            <button
+                              className="button-primary"
+                              type="button"
+                              disabled={working}
+                              aria-busy={working}
+                              onClick={() => void settlement.settle(position, action).then((confirmed) => {
+                                if (confirmed) setSettled((current) => [...current, pool]);
+                              })}
+                            >
+                              {working ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Coins className="size-4" aria-hidden="true" />}
+                              {action === "claim" ? "Claim" : "Refund"}
+                            </button>
+                          )}
+                          <Link className="button-secondary" href={`/markets/${position.marketId}`}>View market<ArrowRight className="size-4" aria-hidden="true" /></Link>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
             )}

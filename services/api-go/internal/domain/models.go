@@ -94,6 +94,17 @@ type StreamSource struct {
 	Claim     Claim  `json:"claim"`
 }
 
+type StreamStatus struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
+	SourceURL   string  `json:"sourceUrl"`
+	Claim       Claim   `json:"claim"`
+	Reason      string  `json:"reason,omitempty"`
+	Threshold   int     `json:"threshold,omitempty"`
+	InspectedAt *string `json:"inspectedAt,omitempty"`
+}
+
 type StreamSubmission struct {
 	SourceURL string `json:"sourceUrl"`
 	Name      string `json:"name"`
@@ -249,6 +260,7 @@ var Units = map[string]string{
 	"Footfall":   "people",
 	"Mobility":   "vehicles",
 	"Weather":    "readings",
+	"Creators":   "mentions",
 }
 
 func UnitFor(category string) string {

@@ -4,6 +4,7 @@ import { Eye, ShieldCheck, TimerReset, WifiOff } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { FormEvent, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { BrowserNotificationDelivery } from "@/components/browser-notifications";
+import type { Category } from "@/lib/domain";
 
 export type Jurisdiction = "India" | "Outside India" | "Undisclosed";
 
@@ -26,7 +27,7 @@ export type ExperienceSettings = {
   forecasts: LocalForecast[];
   profile: {
     displayName: string;
-    specialty: "Traffic" | "Parking" | "Queues" | "Operations";
+    specialty: Category;
   };
   readNotifications: string[];
   reactions: Record<string, "signal" | "watching" | "uncertain">;
@@ -69,17 +70,16 @@ function saveSettings(settings: ExperienceSettings) {
 }
 
 function AccessGate({ onContinue }: { onContinue: (jurisdiction: Jurisdiction) => void }) {
-  const [jurisdiction, setJurisdiction] = useState<Jurisdiction | "">("");
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!ageConfirmed || !jurisdiction) {
-      setError("Confirm your age and select a region to continue.");
+    if (!confirmed) {
+      setError("Confirm this to continue.");
       return;
     }
-    onContinue(jurisdiction);
+    onContinue("Undisclosed");
   }
 
   return (
@@ -91,55 +91,30 @@ function AccessGate({ onContinue }: { onContinue: (jurisdiction: Jurisdiction) =
           </span>
           <div>
             <p className="text-lg font-semibold tracking-[-0.04em]">SCRY</p>
-            <p className="text-xs text-muted-foreground">Forecast preview access</p>
+            <p className="text-xs text-muted-foreground">Markets on live public cameras</p>
           </div>
         </div>
         <div className="mt-8">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ring">Before you enter</p>
           <h1 id="access-title" className="mt-3 display text-4xl">Watch and forecast responsibly.</h1>
-          <p className="mt-3 max-w-prose text-sm leading-6 text-muted-foreground">This build is a product preview. It does not submit positions, move funds, or determine legal eligibility.</p>
+          <p className="mt-3 max-w-prose text-sm leading-6 text-muted-foreground">Positions are real USDC, held by the market contract until it settles. Only stake what you can afford to lose. Whether you may take positions where you live is for you to check.</p>
         </div>
         <form className="mt-7 space-y-5" onSubmit={submit} noValidate>
-          <div>
-            <label className="text-sm font-semibold" htmlFor="jurisdiction">Country or region</label>
-            <select
-              id="jurisdiction"
-              className="focus-ring mt-2 min-h-12 w-full rounded-control border border-border bg-background px-3 text-sm"
-              value={jurisdiction}
-              onChange={(event) => {
-                setJurisdiction(event.target.value as Jurisdiction | "");
-                setError("");
-              }}
-              aria-invalid={Boolean(error) && !jurisdiction}
-              aria-describedby="region-help"
-            >
-              <option value="">Select a region</option>
-              <option value="India">India</option>
-              <option value="Outside India">Outside India</option>
-              <option value="Undisclosed">Prefer not to say</option>
-            </select>
-            <p id="region-help" className="mt-2 text-xs leading-5 text-muted-foreground">Region selection is stored only in this browser. Production access will require server-enforced eligibility checks.</p>
-          </div>
           <label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-control border border-border bg-surface-raised p-3 text-sm leading-6">
             <input
               className="mt-1 size-4 accent-[var(--primary)]"
               type="checkbox"
-              checked={ageConfirmed}
+              checked={confirmed}
               onChange={(event) => {
-                setAgeConfirmed(event.target.checked);
+                setConfirmed(event.target.checked);
                 setError("");
               }}
               aria-describedby={error ? "access-error" : undefined}
             />
-            <span>I confirm that I am at least 18 years old.</span>
+            <span>I am at least 18 years old and allowed to take positions where I live.</span>
           </label>
-          {jurisdiction === "India" && (
-            <div className="rounded-control border border-warning/30 bg-warning/8 p-3 text-xs leading-5 text-warning">
-              India access remains forecast-only in this preview. Monetary participation is not enabled.
-            </div>
-          )}
           {error && <p id="access-error" className="text-sm text-danger" role="alert">{error}</p>}
-          <button className="button-primary w-full" type="submit">Enter forecast preview<ShieldCheck className="size-4" aria-hidden="true" /></button>
+          <button className="button-primary w-full" type="submit">Enter Scry<ShieldCheck className="size-4" aria-hidden="true" /></button>
         </form>
       </section>
     </main>
@@ -258,7 +233,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   return (
     <ExperienceContext.Provider value={value}>
-      {!online && <div className="sticky top-0 z-50 flex min-h-10 items-center justify-center gap-2 bg-warning px-4 text-center text-xs font-semibold text-background" role="status"><WifiOff className="size-4" aria-hidden="true" />You are offline. Live counts and previews may be stale.</div>}
+      {!online && <div className="sticky top-0 z-50 flex min-h-10 items-center justify-center gap-2 bg-warning px-4 text-center text-xs font-semibold text-background" role="status"><WifiOff className="size-4" aria-hidden="true" />You are offline. Live counts and pools may be stale.</div>}
       {children}
       <BrowserNotificationDelivery />
       {sessionNotice && (

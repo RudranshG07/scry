@@ -3,20 +3,28 @@
 import { useCallback, useState } from "react";
 
 import { useWallet } from "@/components/wallet-provider";
-import { toUsdc } from "@/lib/abi";
-import { approveIfNeeded, claim, collateralFor, deposit, refund } from "@/lib/chain";
-import type { Market } from "@/lib/domain";
+import { fromUsdc, toUsdc, type HexString } from "@/lib/abi";
+import { scryApi } from "@/lib/api";
+import { ScryApiError } from "@/lib/api/contract";
+import { approveIfNeeded, balanceOf, claim, collateralOf, deposit, describeRevert, refund, waitForReceipt } from "@/lib/chain";
+import type { Market, Position } from "@/lib/domain";
+import { networkFor } from "@/lib/networks";
 
-export type PositionStage = "idle" | "approving" | "depositing" | "done" | "failed";
+export type PositionStage = "idle" | "switching" | "opening" | "approving" | "depositing" | "confirming" | "done" | "failed";
 
 export type PositionState = {
   stage: PositionStage;
   message: string;
-  approvalHash: string | null;
-  depositHash: string | null;
+  chainId: number | null;
+  hash: string | null;
 };
 
-const idle: PositionState = { stage: "idle", message: "", approvalHash: null, depositHash: null };
+const idle: PositionState = { stage: "idle", message: "", chainId: null, hash: null };
+
+export const busyStages: readonly PositionStage[] = ["switching", "opening", "approving", "depositing", "confirming"];
+
+const deploymentPollMs = 2_000;
+const deploymentAttempts = 45;
 
 /** 4001 is the user changing their mind, not a failure. */
 function rejected(error: unknown) {
@@ -25,76 +33,139 @@ function rejected(error: unknown) {
 
 function describe(error: unknown) {
   if (rejected(error)) return "Cancelled in your wallet.";
+  const refusal = describeRevert(error);
+  if (refusal) return refusal;
+  if (error instanceof ScryApiError && error.status === 409) return "This market has locked. Positions open with the next window.";
   if (error instanceof Error) return error.message;
   return "The transaction could not be sent.";
+}
+
+function pause(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** A market goes on chain the first time somebody wants to trade it there, so
+ * the first position on each network waits a block or two for its contract. */
+async function contractOn(market: Market, chainId: number): Promise<HexString> {
+  const known = market.deployments.find((deployment) => deployment.chainId === chainId);
+  if (known?.contractAddress) return known.contractAddress;
+
+  let deployment = await scryApi.requestDeployment(market.id, chainId);
+  for (let attempt = 0; attempt < deploymentAttempts; attempt += 1) {
+    if (deployment.contractAddress) return deployment.contractAddress;
+    if (deployment.state === "Failed") throw new Error("This market locked before it could open on that network.");
+    await pause(deploymentPollMs);
+    const latest = await scryApi.getMarket(market.id);
+    deployment = latest?.deployments.find((entry) => entry.chainId === chainId) ?? deployment;
+  }
+  if (deployment.contractAddress) return deployment.contractAddress;
+  throw new Error("The market is still opening on chain. Try again in a moment.");
 }
 
 export function usePosition(market: Market) {
   const wallet = useWallet();
   const [state, setState] = useState<PositionState>(idle);
 
-  const settles = Boolean(market.contractAddress);
-
   const take = useCallback(
-    async (outcomeId: string, amount: string) => {
+    async (chainId: number, outcomeId: string, amount: string) => {
       const provider = wallet.provider();
-      const contract = market.contractAddress;
-      if (!provider || !wallet.address || !contract) return;
+      const account = wallet.address;
+      if (!provider || !account) return false;
+      const network = networkFor(chainId)?.name ?? "that network";
 
       let units: bigint;
       try {
         units = toUsdc(amount);
       } catch {
         setState({ ...idle, stage: "failed", message: "Enter an amount in USDC, up to six decimal places." });
-        return;
+        return false;
       }
       if (units === 0n) {
         setState({ ...idle, stage: "failed", message: "Enter an amount above zero." });
-        return;
+        return false;
       }
 
       try {
-        const token = collateralFor(market.chainId);
+        if (wallet.chainId !== chainId) {
+          setState({ ...idle, stage: "switching", chainId, message: `Switch your wallet to ${network}…` });
+          await wallet.switchTo(chainId);
+        }
 
-        setState({ ...idle, stage: "approving", message: "Approving USDC…" });
-        const approvalHash = await approveIfNeeded(provider, token, wallet.address, contract, units);
+        setState({ ...idle, stage: "opening", chainId, message: `Opening this market on ${network}…` });
+        const contract = await contractOn(market, chainId);
 
-        setState({ stage: "depositing", message: "Confirm the position in your wallet…", approvalHash, depositHash: null });
-        const depositHash = await deposit(provider, contract, wallet.address, outcomeId, units);
+        const token = await collateralOf(provider, contract);
+        const held = await balanceOf(provider, token, account);
+        if (held < units) {
+          setState({ ...idle, stage: "failed", chainId, message: `This wallet holds ${fromUsdc(held)} USDC on ${network}.` });
+          return false;
+        }
 
-        setState({ stage: "done", message: "Position submitted.", approvalHash, depositHash });
+        setState({ ...idle, stage: "approving", chainId, message: "Approve this amount of USDC in your wallet…" });
+        const approval = await approveIfNeeded(provider, token, account, contract, units);
+        if (approval) {
+          setState({ stage: "approving", chainId, hash: approval, message: "Waiting for the approval to confirm…" });
+          await waitForReceipt(provider, approval);
+        }
+
+        setState({ ...idle, stage: "depositing", chainId, message: "Confirm the position in your wallet…" });
+        const hash = await deposit(provider, contract, account, outcomeId, units);
+        setState({ stage: "confirming", chainId, hash, message: "Waiting for the position to confirm…" });
+        await waitForReceipt(provider, hash);
+
+        setState({ stage: "done", chainId, hash, message: `Position confirmed on ${network}.` });
+        return true;
       } catch (error) {
-        setState({ ...idle, stage: "failed", message: describe(error) });
+        setState({ ...idle, stage: "failed", chainId, message: describe(error) });
+        return false;
       }
     },
-    [market.chainId, market.contractAddress, wallet],
-  );
-
-  const settle = useCallback(
-    async (kind: "claim" | "refund") => {
-      const provider = wallet.provider();
-      const contract = market.contractAddress;
-      if (!provider || !wallet.address || !contract) return;
-
-      try {
-        setState({ ...idle, stage: "depositing", message: "Confirm in your wallet…" });
-        const hash = kind === "claim"
-          ? await claim(provider, contract, wallet.address)
-          : await refund(provider, contract, wallet.address);
-        setState({
-          stage: "done",
-          message: kind === "claim" ? "Winnings claimed." : "Stake refunded.",
-          approvalHash: null,
-          depositHash: hash,
-        });
-      } catch (error) {
-        setState({ ...idle, stage: "failed", message: describe(error) });
-      }
-    },
-    [market.contractAddress, wallet],
+    [market, wallet],
   );
 
   const reset = useCallback(() => setState(idle), []);
 
-  return { state, take, settle, reset, settles };
+  return { state, take, reset };
+}
+
+export function useSettle() {
+  const wallet = useWallet();
+  const [state, setState] = useState<PositionState & { positionId: string | null }>({ ...idle, positionId: null });
+
+  const settle = useCallback(
+    async (position: Position, kind: "claim" | "refund") => {
+      const provider = wallet.provider();
+      const account = wallet.address;
+      const contract = position.contractAddress;
+      if (!provider || !account || !contract) return false;
+      const chainId = position.chainId;
+      const network = networkFor(chainId)?.name ?? "that network";
+      const positionId = position.id;
+
+      try {
+        if (wallet.chainId !== chainId) {
+          setState({ ...idle, positionId, stage: "switching", chainId, message: `Switch your wallet to ${network}…` });
+          await wallet.switchTo(chainId);
+        }
+        setState({ ...idle, positionId, stage: "depositing", chainId, message: "Confirm in your wallet…" });
+        const hash = kind === "claim" ? await claim(provider, contract, account) : await refund(provider, contract, account);
+        setState({ positionId, stage: "confirming", chainId, hash, message: "Waiting for it to confirm…" });
+        await waitForReceipt(provider, hash);
+        setState({
+          positionId,
+          stage: "done",
+          chainId,
+          hash,
+          message: kind === "claim" ? "Winnings sent to your wallet." : "Stake returned to your wallet.",
+        });
+        return true;
+      } catch (error) {
+        setState({ ...idle, positionId, stage: "failed", chainId, message: describe(error) });
+        return false;
+      }
+    },
+    [wallet],
+  );
+
+  return { state, settle };
 }

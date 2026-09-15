@@ -8,6 +8,7 @@ export const categories: Array<"All" | Category> = [
   "Parking",
   "Queues",
   "Operations",
+  "Creators",
 ];
 
 // Cameras belong to a stream, not to a market: a stream outlives the markets

@@ -84,6 +84,9 @@ func nounFor(c domain.Claim, unit string) string {
 func questionFor(c domain.Claim, threshold int64, unit string) string {
 	switch c.Kind {
 	case "phrase":
+		if threshold == 1 {
+			return fmt.Sprintf("Will %q be said more than once during the observation window?", c.Target)
+		}
 		return fmt.Sprintf("Will %q be said more than %d times during the observation window?",
 			c.Target, threshold)
 	case "objects":

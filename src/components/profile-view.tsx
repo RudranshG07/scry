@@ -57,11 +57,11 @@ export function ProfileView() {
           <div className="max-w-2xl">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Forecast identity</p>
             <h1 className="mt-3 display text-4xl md:text-5xl">Build a record for being right for the right reasons.</h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">Your preview identity and forecasts stay on this device. Calibration scoring begins after connected markets resolve.</p>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">Your profile and forecasts stay on this device. Calibration scoring begins once markets you forecast resolve.</p>
           </div>
           <div className="flex items-center gap-4 rounded-card border border-border bg-surface p-4">
             <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/12 text-ring"><UserRound className="size-6" aria-hidden="true" /></span>
-            <div className="min-w-0"><p className="truncate font-semibold">{settings.profile.displayName}</p><p className="mt-1 text-xs text-muted-foreground">{settings.profile.specialty} specialist · Preview profile</p></div>
+            <div className="min-w-0"><p className="truncate font-semibold">{settings.profile.displayName}</p><p className="mt-1 text-xs text-muted-foreground">{settings.profile.specialty} specialist · Local profile</p></div>
           </div>
         </section>
 
@@ -69,7 +69,7 @@ export function ProfileView() {
           <div className="rounded-card border border-border bg-surface p-4"><Crosshair className="size-5 text-ring" aria-hidden="true" /><p className="mt-3 text-xs text-muted-foreground">Forecasts</p><p className="mt-1 font-mono text-2xl font-semibold">{forecasts.length}</p></div>
           <div className="rounded-card border border-border bg-surface p-4"><Target className="size-5 text-ring" aria-hidden="true" /><p className="mt-3 text-xs text-muted-foreground">Average confidence</p><p className="mt-1 font-mono text-2xl font-semibold">{stats.averageConfidence.toFixed(0)}%</p></div>
           <div className="rounded-card border border-border bg-surface p-4"><Medal className="size-5 text-ring" aria-hidden="true" /><p className="mt-3 text-xs text-muted-foreground">Forecast streak</p><p className="mt-1 font-mono text-2xl font-semibold">{stats.streak}</p></div>
-          <div className="rounded-card border border-border bg-surface p-4"><Sparkles className="size-5 text-ring" aria-hidden="true" /><p className="mt-3 text-xs text-muted-foreground">Category coverage</p><p className="mt-1 font-mono text-2xl font-semibold">{stats.coveredCategories}/4</p></div>
+          <div className="rounded-card border border-border bg-surface p-4"><Sparkles className="size-5 text-ring" aria-hidden="true" /><p className="mt-3 text-xs text-muted-foreground">Category coverage</p><p className="mt-1 font-mono text-2xl font-semibold">{stats.coveredCategories}/{categories.length - 1}</p></div>
         </section>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">

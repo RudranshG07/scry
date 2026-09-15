@@ -17,7 +17,7 @@ export function SettingsView() {
     const nextLimit = Number(limit);
     const nextSession = Number(sessionMinutes);
     if (!Number.isFinite(nextLimit) || nextLimit < 0 || nextLimit > 500) {
-      setError("Set a daily preview limit between 0 and 500 USDC.");
+      setError("Set a position limit between 0 and 500 USDC.");
       setSaved(false);
       return;
     }
@@ -38,16 +38,16 @@ export function SettingsView() {
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ring">Responsible use</p>
           <h1 className="mt-2 display text-4xl md:text-5xl">Controls that stay in your hands.</h1>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">These preview settings are stored locally. Server-enforced limits and eligibility checks will replace them before monetary access exists.</p>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">These controls are kept in this browser. Every market also caps what one wallet can stake in it.</p>
         </div>
 
         <form className="mt-8 grid gap-4 lg:grid-cols-2" onSubmit={save}>
           <section className="rounded-card border border-border bg-surface p-5">
             <div className="flex items-start gap-3">
               <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 text-ring"><Gauge className="size-5" aria-hidden="true" /></span>
-              <div><h2 className="font-semibold">Position preview limit</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Caps the amount you can prepare in a single position preview.</p></div>
+              <div><h2 className="font-semibold">Position limit</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Caps what this browser lets you put on one position.</p></div>
             </div>
-            <label className="mt-5 block text-sm font-semibold" htmlFor="daily-limit">Maximum per preview</label>
+            <label className="mt-5 block text-sm font-semibold" htmlFor="daily-limit">Maximum per position</label>
             <div className="mt-2 flex min-h-12 items-center rounded-control border border-border bg-background px-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring">
               <input
                 id="daily-limit"
@@ -66,7 +66,7 @@ export function SettingsView() {
               />
               <span className="text-xs font-semibold text-muted-foreground">USDC</span>
             </div>
-            <p id="daily-limit-help" className="mt-2 text-xs text-muted-foreground">Enter 0 to disable position previews.</p>
+            <p id="daily-limit-help" className="mt-2 text-xs text-muted-foreground">Enter 0 to turn positions off in this browser.</p>
           </section>
 
           <section className="rounded-card border border-border bg-surface p-5">
@@ -115,7 +115,7 @@ export function SettingsView() {
         </form>
 
         <section className="mt-8 rounded-card border border-danger/30 bg-danger/6 p-5">
-          <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" /><div><h2 className="font-semibold">Take a 24-hour cool-off</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Cool-off disables new position previews on this browser. It cannot be cancelled early.</p></div></div>
+          <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" /><div><h2 className="font-semibold">Take a 24-hour cool-off</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Cool-off turns off new positions in this browser. It cannot be cancelled early.</p></div></div>
           <button className="button-secondary mt-5" type="button" onClick={startCoolOff} disabled={isCoolingOff}>{isCoolingOff ? "Cool-off active" : "Start 24-hour cool-off"}</button>
         </section>
 

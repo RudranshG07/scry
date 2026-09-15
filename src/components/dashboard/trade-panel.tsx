@@ -2,17 +2,36 @@
 
 import { FormEvent, useState } from "react";
 
-import { usePosition } from "@/hooks/use-position";
+import { busyStages, usePosition, type PositionStage } from "@/hooks/use-position";
 import { useExperience } from "@/components/experience-provider";
 import { useToast } from "@/components/ui/toast";
 import { useWallet } from "@/components/wallet-provider";
 import type { Market } from "@/lib/domain";
 import { formatCompactUsd, formatHash, formatMultiplier, formatUsdc } from "@/lib/format";
+import { transactionUrl } from "@/lib/networks";
 import { countdownFor, marketPhase } from "@/lib/time";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
-const maximumPreviewStake = 500;
+// The factory's default cap on one wallet in one market. The contract holds the
+// real figure and refuses anything over it by name.
+const perWalletStake = 100;
+
+const busyLabels: Partial<Record<PositionStage, string>> = {
+  switching: "Switch network in wallet",
+  opening: "Opening market on chain",
+  approving: "Approving USDC",
+  depositing: "Confirm in wallet",
+  confirming: "Confirming",
+};
+
+/** What a stake would return from one network's pool, the stake included. */
+function estimatedReturn(market: Market, chainId: number | null, outcomeId: string | undefined, stake: number) {
+  if (!outcomeId || !(stake > 0)) return 0;
+  const staked = market.deployments.find((deployment) => deployment.chainId === chainId)?.staked ?? {};
+  const total = Object.values(staked).reduce((sum, amount) => sum + amount, 0) + stake;
+  return (stake * total) / ((staked[outcomeId] ?? 0) + stake);
+}
 
 function SignalRow({ label, value }: { label: string; value: string }) {
   return (
@@ -29,6 +48,7 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
   const { settings, isCoolingOff, saveForecast } = useExperience();
   const [mode, setMode] = useState<"forecast" | "position">("forecast");
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
+  const [chosenChain, setChosenChain] = useState<number | null>(null);
   const [stake, setStake] = useState("25");
   const [confidence, setConfidence] = useState("60");
   const [state, setState] = useState<SubmitState>("idle");
@@ -40,11 +60,18 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
   const leading = market.outcomes[0];
   const selected = market.outcomes.find((outcome) => outcome.id === selectedOutcome);
   const numericStake = Number(stake);
-  const expectedReturn = selected && Number.isFinite(numericStake) ? numericStake * selected.returnRate : 0;
-  const effectiveLimit = Math.min(maximumPreviewStake, settings.dailyPositionLimit);
+  const networks = wallet.networks;
+  const chainId = chosenChain
+    ?? (networks.some((network) => network.chainId === wallet.chainId) ? wallet.chainId : networks[0]?.chainId ?? null);
+  const expectedReturn = estimatedReturn(market, chainId, selected?.id, numericStake);
+  const effectiveLimit = Math.min(perWalletStake, settings.dailyPositionLimit);
   const previousForecast = settings.forecasts.find((forecast) => forecast.marketId === market.id);
   const positionBlocked = mode === "position" && (isCoolingOff || effectiveLimit === 0);
-  const disabled = !isOpen || positionBlocked || state === "submitting";
+  const busy = busyStages.includes(position.state.stage);
+  const disabled = !isOpen || positionBlocked || state === "submitting" || busy;
+  const receipt = position.state.hash && position.state.chainId !== null
+    ? transactionUrl(position.state.chainId, position.state.hash)
+    : null;
 
   function resetFeedback() {
     setState("idle");
@@ -69,33 +96,27 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
 
     if (!wallet.isConnected) {
       setState("error");
-      setMessage("Connect a wallet to review this position.");
-      notify({ title: "Wallet not connected", body: "Connect a Base wallet to review a position.", tone: "warning" });
+      setMessage("Connect a wallet to take a position.");
+      notify({ title: "Wallet not connected", body: "Connect a wallet holding USDC to take a position.", tone: "warning" });
+      return;
+    }
+    if (chainId === null) {
+      setState("error");
+      setMessage("Positions are not open on any network yet.");
       return;
     }
     if (!selected || !(numericStake > 0) || numericStake > effectiveLimit) {
       setState("error");
-      setMessage(`Choose an outcome and enter 1–${effectiveLimit} USDC.`);
-      return;
-    }
-
-    if (!position.settles) {
-      setState("error");
-      setMessage("This market has no contract yet, so a position would move nothing.");
-      notify({ title: "Not deployed", body: "This market is not on chain yet. No funds moved.", tone: "info" });
-      return;
-    }
-
-    if (!wallet.signedInAs) {
-      setState("error");
-      setMessage("Sign in with your wallet first so this position is tied to you.");
+      setMessage(`Choose an outcome and enter up to ${effectiveLimit} USDC.`);
       return;
     }
 
     setState("submitting");
     setMessage("");
-    void position.take(selected.id, stake).then(() => {
+    const label = selected.label;
+    void position.take(chainId, selected.id, stake).then((confirmed) => {
       setState("idle");
+      if (confirmed) notify({ title: "Position confirmed", body: `${formatUsdc(numericStake)} on ${label}.`, tone: "success" });
     });
   }
 
@@ -128,7 +149,7 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
                 aria-pressed={mode === option}
                 onClick={() => { setMode(option); resetFeedback(); }}
               >
-                {option === "forecast" ? "Free forecast" : "Position preview"}
+                {option === "forecast" ? "Free forecast" : "Position"}
                 {mode === option && <span className="mt-1 block h-px bg-foreground" />}
               </button>
             ))}
@@ -136,6 +157,23 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
 
           <fieldset disabled={disabled} className="mt-5">
             <legend className="sr-only">Choose an outcome</legend>
+            {mode === "position" && networks.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Network">
+                {networks.map((network) => (
+                  <button
+                    key={network.chainId}
+                    type="button"
+                    aria-pressed={network.chainId === chainId}
+                    onClick={() => { setChosenChain(network.chainId); resetFeedback(); }}
+                    className={`focus-ring rounded-control border px-3 py-1.5 text-xs transition-colors ${
+                      network.chainId === chainId ? "border-foreground text-foreground" : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {network.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid gap-2">
               {market.outcomes.map((outcome) => {
                 const active = selectedOutcome === outcome.id;
@@ -216,15 +254,7 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
           </fieldset>
 
           <button className="button-primary mt-5 w-full" type="submit" disabled={disabled} aria-busy={state === "submitting"}>
-            {position.state.stage === "approving"
-              ? "Approving USDC"
-              : position.state.stage === "depositing"
-                ? "Confirm in wallet"
-                : mode === "forecast"
-                  ? "Save forecast"
-                  : position.settles
-                    ? "Take position"
-                    : "Not deployed yet"}
+            {busyLabels[position.state.stage] ?? (mode === "forecast" ? "Save forecast" : "Take position")}
           </button>
 
           {!isOpen && (
@@ -245,9 +275,15 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
               {position.state.message || message}
             </p>
           )}
-          {position.state.depositHash && (
+          {position.state.hash && (
             <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-              {formatHash(position.state.depositHash)}
+              {receipt ? (
+                <a className="focus-ring rounded-control hover:text-foreground" href={receipt} target="_blank" rel="noreferrer">
+                  {formatHash(position.state.hash)}
+                </a>
+              ) : (
+                formatHash(position.state.hash)
+              )}
             </p>
           )}
         </form>
@@ -259,7 +295,9 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
           <SignalRow label="Pool" value={settings.hidePoolValues ? "hidden" : formatCompactUsd(market.pool)} />
           <SignalRow label="Observers" value={`${market.observers}`} />
           <p className="pt-4 text-[11px] leading-5 text-muted-foreground">
-            {mode === "forecast" ? "Forecasts stay on this device." : "Preview only. No funds are submitted."}
+            {mode === "forecast"
+              ? "Forecasts stay on this device."
+              : "Settles in USDC on the network you pick. If the observers cannot agree on a count, every stake is refunded."}
           </p>
         </div>
       </div>

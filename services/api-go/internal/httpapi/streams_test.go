@@ -56,3 +56,23 @@ func TestStreamIDSurvivesNamesThatAreNotSlugs(t *testing.T) {
 		}
 	}
 }
+
+func TestAPhraseStreamIsFiledUnderCreators(t *testing.T) {
+	cases := []struct {
+		name       string
+		submission domain.StreamSubmission
+		want       string
+		known      bool
+	}{
+		{"a streamer to listen to", domain.StreamSubmission{Claim: domain.Claim{Kind: "phrase", Target: "guys"}}, "Creators", true},
+		{"a camera to count on", domain.StreamSubmission{Claim: domain.Claim{Kind: "objects", Target: "car"}}, "Traffic", true},
+		{"a category named outright", domain.StreamSubmission{Category: "Footfall", Claim: domain.Claim{Kind: "objects", Target: "person"}}, "Footfall", true},
+		{"a category Scry does not have", domain.StreamSubmission{Category: "Casino"}, "Casino", false},
+	}
+	for _, c := range cases {
+		got, known := categoryFor(c.submission)
+		if got != c.want || known != c.known {
+			t.Errorf("%s: got %q known=%v, want %q known=%v", c.name, got, known, c.want, c.known)
+		}
+	}
+}

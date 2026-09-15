@@ -64,7 +64,7 @@ export function NotificationsView() {
         {status === "ready" && notifications.length === 0 && <section className="mt-8 grid min-h-64 place-items-center rounded-card border border-border bg-surface text-center"><div><Bell className="mx-auto size-8 text-muted-foreground" aria-hidden="true" /><h2 className="mt-4 font-semibold">All quiet for now</h2><p className="mt-2 text-sm text-muted-foreground">Set a market reminder to see it here.</p><Link className="button-secondary mt-5" href="/markets">Browse schedule</Link></div></section>}
         {status === "ready" && notifications.length > 0 && (
           <section className="mt-8 overflow-hidden rounded-card border border-border bg-surface" aria-label="Notifications">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5"><p className="text-sm font-semibold">{unread.length} unread</p><p className="text-xs text-muted-foreground">Stored locally in preview</p></div>
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5"><p className="text-sm font-semibold">{unread.length} unread</p><p className="text-xs text-muted-foreground">Stored in this browser</p></div>
             <div className="divide-y divide-border">
               {notifications.map((notification) => {
                 const read = settings.readNotifications.includes(notification.id);

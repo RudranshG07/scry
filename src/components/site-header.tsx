@@ -8,7 +8,7 @@ import { useWallet } from "@/components/wallet-provider";
 
 function walletLabel(status: ReturnType<typeof useWallet>["status"], address: `0x${string}` | null) {
   if (status === "connecting" || status === "checking") return "Connecting";
-  if (status === "wrong-network") return "Switch to Base";
+  if (status === "wrong-network") return "Switch network";
   if (status === "unavailable") return "No wallet";
   if (status === "error") return "Retry wallet";
   if (status === "connected" && address) return `${address.slice(0, 5)}…${address.slice(-4)}`;
@@ -23,6 +23,7 @@ export function SiteHeader() {
   const desktopLinks = [
     { href: "/live", label: "Live", active: pathname === "/live" || pathname.startsWith("/markets/") },
     { href: "/markets", label: "Markets", active: pathname === "/markets" },
+    { href: "/create", label: "Create", active: pathname === "/create" },
     { href: "/leaderboard", label: "Leaderboard", active: pathname === "/leaderboard" },
     { href: "/portfolio", label: "Portfolio", active: pathname === "/portfolio" },
     { href: "/profile", label: "Profile", active: pathname === "/profile" },
@@ -63,14 +64,14 @@ export function SiteHeader() {
             <CommandPalette />
             <span className="hidden min-h-10 items-center gap-2 rounded-control border border-border bg-surface px-3 text-xs font-medium text-muted-foreground xl:flex">
               <span className="size-1.5 rounded-full bg-accent" />
-              Base · Forecast only
+              Base · Polygon
             </span>
             <Link className="focus-ring grid size-10 shrink-0 place-items-center rounded-control border border-border bg-surface text-muted-foreground hover:text-foreground" href="/notifications" aria-label="Open notifications"><Bell className="size-4" aria-hidden="true" /></Link>
             <button
               className={wallet.isConnected ? "button-secondary" : "button-primary"}
               type="button"
               onClick={() => void wallet.connect()}
-              disabled={loading || wallet.isConnected}
+              disabled={loading || wallet.status === "connected"}
               aria-busy={loading}
               title={wallet.error ?? undefined}
             >

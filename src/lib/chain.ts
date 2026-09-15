@@ -1,35 +1,27 @@
 /** Reads and writes the settlement contracts through the connected wallet. */
 
-import { decodeUint, encode, type HexString } from "./abi.ts";
+import { decodeAddress, decodeUint, encode, errorSelectors, type HexString } from "./abi.ts";
 
 export type Eip1193 = {
   request<T = unknown>(request: { method: string; params?: unknown[] }): Promise<T>;
 };
 
-export const chains = {
-  base: 8453,
-  polygon: 137,
-} as const;
-
-/** Polygon runs two USDCs; Polymarket settles in the bridged USDC.e. Sending to
- * the wrong one succeeds and the balance never appears. */
-export const collateral: Record<number, HexString> = {
-  [chains.base]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  [chains.polygon]: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
-};
-
-export function collateralFor(chainId: number): HexString {
-  const token = collateral[chainId];
-  if (!token) throw new Error(`Scry does not settle on chain ${chainId}.`);
-  return token;
-}
-
-async function read(provider: Eip1193, to: string, data: HexString): Promise<bigint> {
-  const result = await provider.request<string>({
+async function call(provider: Eip1193, to: string, data: HexString) {
+  return provider.request<string>({
     method: "eth_call",
     params: [{ to, data }, "latest"],
   });
-  return decodeUint(result);
+}
+
+async function read(provider: Eip1193, to: string, data: HexString): Promise<bigint> {
+  return decodeUint(await call(provider, to, data));
+}
+
+/** Asked of the market itself. A token list kept here could name a different
+ * USDC from the one the contract holds, and an approval against the wrong one
+ * leaves the deposit to fail after the wallet has already asked for it. */
+export async function collateralOf(provider: Eip1193, market: string): Promise<HexString> {
+  return decodeAddress(await call(provider, market, encode.collateral()));
 }
 
 export async function allowance(provider: Eip1193, token: string, owner: string, spender: string) {
@@ -50,6 +42,10 @@ export async function positionOf(provider: Eip1193, market: string, account: str
 
 export async function totalPool(provider: Eip1193, market: string) {
   return read(provider, market, encode.totalPool());
+}
+
+export async function hasSettled(provider: Eip1193, market: string, account: string) {
+  return (await read(provider, market, encode.hasSettled(account))) !== 0n;
 }
 
 async function send(provider: Eip1193, from: string, to: string, data: HexString) {
@@ -88,6 +84,62 @@ export async function claim(provider: Eip1193, market: string, from: string) {
 
 export async function refund(provider: Eip1193, market: string, from: string) {
   return send(provider, from, market, encode.refund());
+}
+
+type Receipt = { status: string; blockNumber: string | null };
+
+function pause(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** Resolves once a transaction is mined, and throws if it reverted. A deposit
+ * sent before its approval is mined is estimated against the old allowance, and
+ * the wallet refuses it. */
+export async function waitForReceipt(
+  provider: Eip1193,
+  hash: string,
+  { attempts = 120, intervalMs = 1_500 }: { attempts?: number; intervalMs?: number } = {},
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const receipt = await provider.request<Receipt | null>({
+      method: "eth_getTransactionReceipt",
+      params: [hash],
+    });
+    if (receipt?.blockNumber) {
+      if (receipt.status !== "0x1") throw new Error("The transaction was mined but reverted. Nothing moved.");
+      return receipt;
+    }
+    await pause(intervalMs);
+  }
+  throw new Error("The transaction has not confirmed yet. Check your wallet before trying again.");
+}
+
+const revertMessages: Record<keyof typeof errorSelectors, string> = {
+  StakeTooLarge: "That is more than one wallet can stake on this market.",
+  PoolFull: "This market's pool is full.",
+  Paused: "Deposits are paused for now. Nothing was taken.",
+  WrongStatus: "The market is not taking that right now.",
+  NothingToClaim: "There is nothing to collect for this wallet here.",
+  AlreadySettled: "This wallet has already been paid out on this market.",
+  UnknownOutcome: "That outcome is not part of this market.",
+  ZeroAmount: "Enter an amount above zero.",
+};
+
+function textOf(error: unknown) {
+  try {
+    return `${error instanceof Error ? error.message : ""} ${JSON.stringify(error) ?? ""}`.toLowerCase();
+  } catch {
+    return String(error).toLowerCase();
+  }
+}
+
+/** Wallets report a contract's refusal as text naming only its error selector. */
+export function describeRevert(error: unknown): string | null {
+  const text = textOf(error);
+  for (const [name, selector] of Object.entries(errorSelectors)) {
+    if (text.includes(selector.slice(2))) return revertMessages[name as keyof typeof errorSelectors];
+  }
+  return null;
 }
 
 /** Hex-encoded so wallets render the words rather than raw bytes. */

@@ -1,4 +1,4 @@
-import type { CreateRoomMessage, LeaderboardEntry, Market, MarketUpdate, Portfolio, ProofOfObservation, RoomMessage, ScryNotification } from "@/lib/domain";
+import type { CreateRoomMessage, LeaderboardEntry, Market, MarketDeployment, MarketUpdate, Portfolio, ProofOfObservation, RoomMessage, ScryNotification, SettlementChain, StreamStatus, StreamSubmission } from "@/lib/domain";
 import type { MarketQuery, MarketSubscription, ScryApi, Session, SignInChallenge } from "@/lib/api/contract";
 import { ScryApiError } from "@/lib/api/contract";
 
@@ -17,7 +17,10 @@ export class HttpScryApi implements ScryApi {
       headers: { Accept: "application/json", ...init.headers },
     });
     if (!response.ok) {
-      throw new ScryApiError("Scry service request failed.", response.status);
+      // The API words its refusals for the person who hit them, and a generic
+      // failure in their place told a submitter nothing about what to fix.
+      const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      throw new ScryApiError(typeof body?.error === "string" ? body.error : "Scry service request failed.", response.status);
     }
     return response.json() as Promise<T>;
   }
@@ -32,6 +35,30 @@ export class HttpScryApi implements ScryApi {
 
   getMarket(id: string, signal?: AbortSignal) {
     return this.request<Market | null>(`/v1/markets/${encodeURIComponent(id)}`, { signal });
+  }
+
+  listChains(signal?: AbortSignal) {
+    return this.request<SettlementChain[]>("/v1/chains", { signal });
+  }
+
+  requestDeployment(marketId: string, chainId: number) {
+    return this.request<MarketDeployment>(`/v1/markets/${encodeURIComponent(marketId)}/deployments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chainId }),
+    });
+  }
+
+  submitStream(submission: StreamSubmission) {
+    return this.request<StreamStatus>("/v1/streams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(submission),
+    });
+  }
+
+  getStream(id: string, signal?: AbortSignal) {
+    return this.request<StreamStatus>(`/v1/streams/${encodeURIComponent(id)}`, { signal });
   }
 
   getProof(marketId: string, signal?: AbortSignal) {

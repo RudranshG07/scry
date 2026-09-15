@@ -2,6 +2,7 @@ import type {
   Category,
   LeaderboardEntry,
   Market,
+  MarketDeployment,
   MarketStatus,
   MarketUpdate,
   Portfolio,
@@ -9,6 +10,9 @@ import type {
   RoomMessage,
   CreateRoomMessage,
   ScryNotification,
+  SettlementChain,
+  StreamStatus,
+  StreamSubmission,
 } from "@/lib/domain";
 
 export type MarketQuery = {
@@ -36,6 +40,10 @@ export type MarketSubscription = {
 export interface ScryApi {
   listMarkets(query?: MarketQuery): Promise<Market[]>;
   getMarket(id: string, signal?: AbortSignal): Promise<Market | null>;
+  listChains(signal?: AbortSignal): Promise<SettlementChain[]>;
+  requestDeployment(marketId: string, chainId: number): Promise<MarketDeployment>;
+  submitStream(submission: StreamSubmission): Promise<StreamStatus>;
+  getStream(id: string, signal?: AbortSignal): Promise<StreamStatus>;
   getProof(marketId: string, signal?: AbortSignal): Promise<ProofOfObservation | null>;
   getPortfolio(address: `0x${string}`, signal?: AbortSignal): Promise<Portfolio>;
   getLeaderboard(signal?: AbortSignal): Promise<LeaderboardEntry[]>;

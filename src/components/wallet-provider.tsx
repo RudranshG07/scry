@@ -4,6 +4,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 
 import { scryApi } from "@/lib/api";
 import { toSignableHex } from "@/lib/chain";
+import { hexChainId, networkFor, parseChainId, settledNetworks, type Network } from "@/lib/networks";
 
 type HexAddress = `0x${string}`;
 type WalletStatus = "checking" | "unavailable" | "disconnected" | "connecting" | "wrong-network" | "connected" | "error";
@@ -27,10 +28,13 @@ declare global {
 
 type WalletContextValue = {
   address: HexAddress | null;
+  chainId: number | null;
+  networks: Network[];
   status: WalletStatus;
   error: string | null;
   isConnected: boolean;
   connect: () => Promise<void>;
+  switchTo: (chainId: number) => Promise<void>;
   signedInAs: HexAddress | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -38,7 +42,6 @@ type WalletContextValue = {
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
-const baseChainId = "0x2105";
 
 function isHexAddress(value: string): value is HexAddress {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -49,23 +52,24 @@ function errorCode(error: unknown) {
   return null;
 }
 
-async function switchToBase(provider: EthereumProvider) {
+async function switchChain(provider: EthereumProvider, chainId: number) {
   try {
     await provider.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: baseChainId }],
+      params: [{ chainId: hexChainId(chainId) }],
     });
   } catch (error) {
-    if (errorCode(error) !== 4902) throw error;
+    const network = networkFor(chainId);
+    if (errorCode(error) !== 4902 || !network) throw error;
     await provider.request({
       method: "wallet_addEthereumChain",
       params: [
         {
-          chainId: baseChainId,
-          chainName: "Base Mainnet",
-          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-          rpcUrls: ["https://mainnet.base.org"],
-          blockExplorerUrls: ["https://base.blockscout.com"],
+          chainId: hexChainId(chainId),
+          chainName: network.name,
+          nativeCurrency: network.currency,
+          rpcUrls: [network.rpcUrl],
+          blockExplorerUrls: network.explorer ? [network.explorer] : undefined,
         },
       ],
     });
@@ -74,9 +78,24 @@ async function switchToBase(provider: EthereumProvider) {
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<HexAddress | null>(null);
+  const [chainId, setChainId] = useState<number | null>(null);
   const [status, setStatus] = useState<WalletStatus>("checking");
   const [error, setError] = useState<string | null>(null);
   const [signedInAs, setSignedInAs] = useState<HexAddress | null>(null);
+  const [settledChainIds, setSettledChainIds] = useState<number[] | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    scryApi
+      .listChains(controller.signal)
+      .then((chains) => setSettledChainIds(chains.map((chain) => chain.chainId)))
+      .catch(() => {
+        if (!controller.signal.aborted) setSettledChainIds([]);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const networks = useMemo(() => settledNetworks(settledChainIds ?? []), [settledChainIds]);
 
   const syncWallet = useCallback(async () => {
     const provider = window.ethereum;
@@ -86,10 +105,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const [accounts, chainId] = await Promise.all([
+      const [accounts, currentChain] = await Promise.all([
         provider.request<string[]>({ method: "eth_accounts" }),
         provider.request<string>({ method: "eth_chainId" }),
       ]);
+      setChainId(parseChainId(currentChain));
       const nextAddress = accounts[0];
       if (!nextAddress || !isHexAddress(nextAddress)) {
         setAddress(null);
@@ -97,7 +117,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return;
       }
       setAddress(nextAddress);
-      setStatus(chainId === baseChainId ? "connected" : "wrong-network");
+      setStatus("connected");
       setError(null);
     } catch {
       setStatus("error");
@@ -119,11 +139,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
   }, [syncWallet]);
 
+  const switchTo = useCallback(async (next: number) => {
+    const provider = window.ethereum;
+    if (!provider) throw new Error("Install an EVM wallet to take a position.");
+    await switchChain(provider, next);
+    setChainId(next);
+  }, []);
+
   const connect = useCallback(async () => {
     const provider = window.ethereum;
     if (!provider) {
       setStatus("unavailable");
-      setError("Install an EVM wallet to connect to Base.");
+      setError("Install an EVM wallet to connect.");
       return;
     }
     setStatus("connecting");
@@ -132,15 +159,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = await provider.request<string[]>({ method: "eth_requestAccounts" });
       const nextAddress = accounts[0];
       if (!nextAddress || !isHexAddress(nextAddress)) throw new Error("Wallet returned an invalid address.");
-      const chainId = await provider.request<string>({ method: "eth_chainId" });
-      if (chainId !== baseChainId) await switchToBase(provider);
+      const current = parseChainId(await provider.request<string>({ method: "eth_chainId" }));
+      const settled = networks.some((network) => network.chainId === current);
+      if (!settled && networks.length > 0) await switchChain(provider, networks[0].chainId);
       setAddress(nextAddress);
+      setChainId(settled || networks.length === 0 ? current : networks[0].chainId);
       setStatus("connected");
     } catch (caught) {
       setStatus("error");
       setError(errorCode(caught) === 4001 ? "Wallet connection was cancelled." : "Wallet connection failed. Try again.");
     }
-  }, []);
+  }, [networks]);
 
   const signIn = useCallback(async () => {
     const provider = window.ethereum;
@@ -162,19 +191,25 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setSignedInAs(null);
   }, []);
 
+  const offChain = status === "connected" && networks.length > 0 && !networks.some((network) => network.chainId === chainId);
+  const shownStatus: WalletStatus = offChain ? "wrong-network" : status;
+
   const value = useMemo<WalletContextValue>(
     () => ({
       address,
-      status,
+      chainId,
+      networks,
+      status: shownStatus,
       error,
       isConnected: status === "connected" && address !== null,
       connect,
+      switchTo,
       signedInAs,
       signIn,
       signOut,
       provider: () => window.ethereum ?? null,
     }),
-    [address, status, error, connect, signedInAs, signIn, signOut],
+    [address, chainId, networks, shownStatus, status, error, connect, switchTo, signedInAs, signIn, signOut],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

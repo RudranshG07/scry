@@ -18,6 +18,21 @@ export const selectors = {
   positionOf: "0x8b86d878",
   totalPool: "0xecfb49a3",
   status: "0x200d2ed2",
+  collateral: "0xd8dfeb45",
+  stakedBy: "0x5f56a31a",
+  hasSettled: "0x1abc50ce",
+} as const;
+
+/** Custom errors the market reverts with, pinned and checked the same way. */
+export const errorSelectors = {
+  StakeTooLarge: "0x1a64b33b",
+  PoolFull: "0x9e80781c",
+  Paused: "0x9e87fac8",
+  WrongStatus: "0x8e78f0cb",
+  NothingToClaim: "0x969bf728",
+  AlreadySettled: "0x560ff900",
+  UnknownOutcome: "0x7c436a95",
+  ZeroAmount: "0x1f2a2005",
 } as const;
 
 export function padWord(value: string): string {
@@ -49,6 +64,12 @@ export function call(selector: string, ...words: string[]): HexString {
   return `${selector}${words.join("")}` as HexString;
 }
 
+export function decodeAddress(data: string): HexString {
+  const bare = data.replace(/^0x/, "");
+  if (bare.length < 64) throw new Error("not an address word");
+  return `0x${bare.slice(24, 64)}` as HexString;
+}
+
 export function decodeUint(data: string): bigint {
   const bare = data.replace(/^0x/, "");
   if (bare.length === 0) return 0n;
@@ -70,6 +91,9 @@ export const encode = {
     call(selectors.positionOf, encodeAddress(account), encodeBytes32(outcomeId)),
   totalPool: () => call(selectors.totalPool),
   status: () => call(selectors.status),
+  collateral: () => call(selectors.collateral),
+  stakedBy: (account: string) => call(selectors.stakedBy, encodeAddress(account)),
+  hasSettled: (account: string) => call(selectors.hasSettled, encodeAddress(account)),
 };
 
 /** Six decimals on both chains. A float would round "0.1" to something else. */

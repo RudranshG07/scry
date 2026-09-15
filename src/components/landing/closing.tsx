@@ -37,8 +37,8 @@ export function Closing({ liveCount }: { liveCount: number }) {
             Scry
           </Link>
           <p className="max-w-sm text-xs leading-5 text-white/35">
-            A product preview. Markets are simulated, no funds are submitted, and monetary
-            participation is disabled.
+            Positions settle in USDC on Base and Polygon. Whenever the observers cannot agree
+            on a count, every stake is refunded in full.
           </p>
           <nav className="flex flex-wrap gap-6" aria-label="Footer navigation">
             {footerLinks.map((link) => (

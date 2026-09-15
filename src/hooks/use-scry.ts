@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAsync } from "@/hooks/use-async";
 import { scryApi } from "@/lib/api";
-import type { Market, MarketUpdate } from "@/lib/domain";
+import type { Market, MarketUpdate, SettlementChain, StreamStatus } from "@/lib/domain";
 
 const marketRefreshMs = 20_000;
 
@@ -16,6 +16,17 @@ export function useMarkets() {
 export function useMarket(id: string) {
   return useAsync<Market | null>(`market:${id}`, (signal) => scryApi.getMarket(id, signal), {
     refreshMs: marketRefreshMs,
+  });
+}
+
+export function useSettlementChains() {
+  return useAsync<SettlementChain[]>("chains", (signal) => scryApi.listChains(signal));
+}
+
+export function useStream(id: string | null) {
+  return useAsync<StreamStatus>(`stream:${id ?? "none"}`, (signal) => scryApi.getStream(id as string, signal), {
+    enabled: Boolean(id),
+    refreshMs: 10_000,
   });
 }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 
-import { decodeUint, encode, encodeBytes32, fromUsdc, selectors, toUsdc } from "../src/lib/abi.ts";
+import { decodeAddress, decodeUint, encode, encodeBytes32, errorSelectors, fromUsdc, selectors, toUsdc } from "../src/lib/abi.ts";
 
 // Selectors are keccak hashes, which cannot be computed in the browser without a
 // hashing library. They are pinned as constants, so the only thing standing
@@ -18,6 +18,9 @@ const signatures = {
   positionOf: "positionOf(address,bytes32)",
   totalPool: "totalPool()",
   status: "status()",
+  collateral: "collateral()",
+  stakedBy: "stakedBy(address)",
+  hasSettled: "hasSettled(address)",
 };
 
 test("every pinned selector matches the compiled signature", (t) => {
@@ -33,6 +36,23 @@ test("every pinned selector matches the compiled signature", (t) => {
     const actual = execFileSync("cast", ["sig", signature], { encoding: "utf8" }).trim();
     assert.equal(selectors[name], actual, `${name} (${signature})`);
   }
+});
+
+test("every pinned error selector matches the error the market reverts with", (t) => {
+  try {
+    execFileSync("cast", ["--version"], { encoding: "utf8" });
+  } catch {
+    t.skip("foundry's cast is not installed");
+    return;
+  }
+  for (const [name, selector] of Object.entries(errorSelectors)) {
+    assert.equal(selector, execFileSync("cast", ["sig", `${name}()`], { encoding: "utf8" }).trim(), name);
+  }
+});
+
+test("an address comes back out of the last twenty bytes of its word", () => {
+  assert.equal(decodeAddress(`0x${"0".repeat(24)}833589fcd6edb6e08f4c7c32d4f71b54bda02913`), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
+  assert.throws(() => decodeAddress("0x"));
 });
 
 test("addresses and amounts each occupy one left-padded word", () => {

@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
@@ -171,4 +174,38 @@ func (s *Postgres) RecordQualification(ctx context.Context, id string, v domain.
 		return fmt.Errorf("record qualification: %w", err)
 	}
 	return nil
+}
+
+func (s *Postgres) StreamStatus(ctx context.Context, id string) (domain.StreamStatus, error) {
+	var out domain.StreamStatus
+	var threshold *int
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, name, status, coalesce(source_url, ''), coalesce(default_claim, '{}'::jsonb),
+		       coalesce(qualification->>'reason', ''), (qualification->>'threshold')::int,
+		       qualification->>'inspectedAt'
+		FROM streams
+		WHERE id = $1`, id).
+		Scan(&out.ID, &out.Name, &out.Status, &out.SourceURL, &out.Claim, &out.Reason, &threshold, &out.InspectedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out, ErrNotFound
+	}
+	if err != nil {
+		return out, fmt.Errorf("read stream: %w", err)
+	}
+	if threshold != nil {
+		out.Threshold = *threshold
+	}
+	return out, nil
+}
+
+func (s *Postgres) SubmittedSince(ctx context.Context, account string, since time.Duration) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM streams
+		WHERE lower(submitted_by) = lower($1) AND submitted_at > NOW() - $2::interval`,
+		account, since.String()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count submissions: %w", err)
+	}
+	return count, nil
 }

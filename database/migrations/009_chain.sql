@@ -39,4 +39,9 @@ ALTER TABLE projected_positions ALTER COLUMN chain_id DROP DEFAULT;
 ALTER TABLE projected_positions DROP CONSTRAINT projected_positions_pkey;
 ALTER TABLE projected_positions ADD PRIMARY KEY (market_id, chain_id, account, outcome_id);
 
+ALTER TABLE streams DROP CONSTRAINT streams_category_check;
+ALTER TABLE streams ADD CONSTRAINT streams_category_check CHECK (category IN ('Traffic', 'Parking', 'Queues', 'Operations', 'Footfall', 'Mobility', 'Weather', 'Creators'));
+ALTER TABLE forecaster_reputation_snapshots DROP CONSTRAINT forecaster_reputation_snapshots_category_check;
+ALTER TABLE forecaster_reputation_snapshots ADD CONSTRAINT forecaster_reputation_snapshots_category_check CHECK (category IN ('Traffic', 'Parking', 'Queues', 'Operations', 'Footfall', 'Mobility', 'Weather', 'Creators'));
+
 COMMIT;
