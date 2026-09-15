@@ -247,6 +247,26 @@ func TestWatchableMeansASourceNotARelayPath(t *testing.T) {
 	}
 }
 
+func TestThresholdsFromHistoryRoundLikeTheQualifier(t *testing.T) {
+	cases := []struct {
+		counted float64
+		want    int64
+	}{
+		{0.4, 1},
+		{3.6, 4},
+		{21, 20},
+		{44, 45},
+		{159, 160},
+		{164.4, 160},
+		{612, 600},
+	}
+	for _, c := range cases {
+		if got := settleNear(c.counted); got != c.want {
+			t.Errorf("settleNear(%v) = %d, want %d", c.counted, got, c.want)
+		}
+	}
+}
+
 func TestTheQuestionNamesWhatIsActuallyCounted(t *testing.T) {
 	cases := []struct {
 		target, unit, want string

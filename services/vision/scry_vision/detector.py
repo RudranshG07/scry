@@ -41,7 +41,12 @@ class Model:
 
 
 PRIMARY = Model(name="primary", weights="yolov8s.pt", confidence=0.35, iou=0.5)
-VERIFY = Model(name="verify", weights="yolov8n.pt", confidence=0.25, iou=0.7)
+# yolo11s, not yolov8n. On the same relay frames yolov8n came in 9 to 54% under
+# yolov8s, past the 20% the resolver allows — it voided Bangkok and CCTV-101 and
+# suspended Ohio on 2026-09-14 — while yolo11s stayed within 8% on all four
+# cameras tried, for about what yolov8s costs. It is still a different
+# architecture, so the two observers are not one detector run twice.
+VERIFY = Model(name="verify", weights="yolo11s.pt", confidence=0.25, iou=0.7)
 
 MODELS = {"primary_vision": PRIMARY, "verification": VERIFY, "edge": VERIFY}
 

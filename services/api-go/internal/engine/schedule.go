@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,7 +22,26 @@ const (
 	// short on purpose. most things that spoil a window are a function
 	// of how long it is, and both observers have to get through cleanly
 	observeWindow = 4 * time.Minute
+
+	historyWindows = 6
+	historyMinimum = 3
 )
+
+// Rounds the way settle_near in scry_vision/qualify.py does, so a threshold
+// reads the same whichever of the two set it.
+func settleNear(value float64) int64 {
+	if value < 10 {
+		return max(1, int64(math.RoundToEven(value)))
+	}
+	step := 25.0
+	switch {
+	case value < 100:
+		step = 5
+	case value < 500:
+		step = 10
+	}
+	return int64(step * math.RoundToEven(value/step))
+}
 
 type streamPlan struct {
 	id        string
@@ -79,6 +99,23 @@ func (e *Engine) schedule(ctx context.Context) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT s.id, s.category,
 		       COALESCE((s.qualification->>'threshold')::bigint, 180),
+		       -- What this camera actually counted lately, when there is enough
+		       -- of it: the median of the last few windows both observers read
+		       -- cleanly. The qualifier's figure is a 45 s sample scaled up and
+		       -- ran two to three times over on every stream it was checked on.
+		       (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY recent.counted)
+		        FROM (SELECT avg(r.observed_value) AS counted
+		              FROM markets m
+		              JOIN observer_reports r ON r.market_id = m.id
+		              WHERE m.stream_id = s.id
+		                AND m.observation_ends_at > NOW() - INTERVAL '1 day'
+		                AND m.observation_ends_at - m.observation_starts_at = $1::interval
+		                AND cardinality(r.invalid_reasons) = 0
+		              GROUP BY m.id, m.observation_ends_at
+		              HAVING count(DISTINCT r.observer_id) >= $2
+		              ORDER BY m.observation_ends_at DESC
+		              LIMIT $3) recent
+		        HAVING count(*) >= $4),
 		       COALESCE(s.default_claim, '{}'::jsonb)
 		FROM streams s
 		WHERE s.status = 'Qualified'
@@ -100,7 +137,7 @@ func (e *Engine) schedule(ctx context.Context) error {
 		      SELECT 1 FROM markets m
 		      WHERE m.stream_id = s.id
 		        AND m.status IN ('Scheduled', 'Open', 'Locked', 'Observing')
-		  )`)
+		  )`, observeWindow.String(), minObservers, historyWindows, historyMinimum)
 	if err != nil {
 		return fmt.Errorf("find idle streams: %w", err)
 	}
@@ -109,8 +146,12 @@ func (e *Engine) schedule(ctx context.Context) error {
 	var plans []streamPlan
 	for rows.Next() {
 		var p streamPlan
-		if err := rows.Scan(&p.id, &p.category, &p.threshold, &p.claim); err != nil {
+		var recent *float64
+		if err := rows.Scan(&p.id, &p.category, &p.threshold, &recent, &p.claim); err != nil {
 			return err
+		}
+		if recent != nil {
+			p.threshold = settleNear(*recent)
 		}
 		if !observable(p.claim) {
 			if !e.warned[p.id] {

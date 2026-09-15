@@ -331,7 +331,7 @@ class DetectorProfileTest(unittest.TestCase):
     def test_the_version_names_the_model_that_produced_the_count(self):
         from scry_vision.detector import PRIMARY, VERIFY
         self.assertIn("yolov8s", PRIMARY.version)
-        self.assertIn("yolov8n", VERIFY.version)
+        self.assertIn("yolo11s", VERIFY.version)
         self.assertNotEqual(PRIMARY.version, VERIFY.version)
 
     def test_people_and_vehicles_are_different_coco_classes(self):
