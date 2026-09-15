@@ -182,3 +182,19 @@ func TestAResultNeedsARuleHash(t *testing.T) {
 		t.Fatal("a result without a time was built")
 	}
 }
+
+// Read back from ObservationResolver.digest on a local deployment at chain 31337.
+// services/vision/tests/test_attest.py pins the same value for the observers.
+func TestTheDigestIsTheOneTheResolverComputes(t *testing.T) {
+	result, err := NewResult("market-1", 164, "yes", "", "0x"+strings.Repeat("ab", 32), 1789422312)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := ResultDigest(big.NewInt(31337), "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0", result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(digest[:]); got != "c523333bb075065df99e3e7ba40aa44c6da5fc216a63647aaf334e28de5a27b6" {
+		t.Fatalf("digest %s is not the one the resolver computes", got)
+	}
+}

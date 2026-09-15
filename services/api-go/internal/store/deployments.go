@@ -59,12 +59,20 @@ func (s *Postgres) RequestDeployment(ctx context.Context, market string, chainID
 	return out, nil
 }
 
+// Each deployment is its own pool: a stake on one chain is paid from that
+// chain's pool alone, so a return quoted from every chain's stakes together
+// would promise money the contract does not hold.
 func (s *Postgres) deployments(ctx context.Context, ids []string) (map[string][]domain.Deployment, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT market_id, chain_id, contract_address, state
-		FROM market_deployments
-		WHERE market_id = ANY($1)
-		ORDER BY market_id, chain_id`, ids)
+		SELECT d.market_id, d.chain_id, d.contract_address, d.state,
+		       COALESCE((SELECT jsonb_object_agg(staked.outcome_id, staked.amount)
+		                 FROM (SELECT p.outcome_id, SUM(p.amount)::float8 / 1e6 AS amount
+		                       FROM projected_positions p
+		                       WHERE p.market_id = d.market_id AND p.chain_id = d.chain_id
+		                       GROUP BY p.outcome_id) staked), '{}'::jsonb)
+		FROM market_deployments d
+		WHERE d.market_id = ANY($1)
+		ORDER BY d.market_id, d.chain_id`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("query deployments: %w", err)
 	}
@@ -74,7 +82,7 @@ func (s *Postgres) deployments(ctx context.Context, ids []string) (map[string][]
 	for rows.Next() {
 		var id string
 		var d domain.Deployment
-		if err := rows.Scan(&id, &d.ChainID, &d.ContractAddress, &d.State); err != nil {
+		if err := rows.Scan(&id, &d.ChainID, &d.ContractAddress, &d.State, &d.Staked); err != nil {
 			return nil, fmt.Errorf("scan deployments: %w", err)
 		}
 		out[id] = append(out[id], d)

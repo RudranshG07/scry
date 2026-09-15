@@ -50,9 +50,10 @@ type Market struct {
 // Deployment is a market's contract on one chain. A market is deployed to a
 // chain when somebody first wants to take a position there.
 type Deployment struct {
-	ChainID         int64   `json:"chainId"`
-	ContractAddress *string `json:"contractAddress,omitempty"`
-	State           string  `json:"state"`
+	ChainID         int64              `json:"chainId"`
+	ContractAddress *string            `json:"contractAddress,omitempty"`
+	State           string             `json:"state"`
+	Staked          map[string]float64 `json:"staked,omitempty"`
 }
 
 type OutcomeBand struct {

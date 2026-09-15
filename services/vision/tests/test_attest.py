@@ -86,3 +86,14 @@ class LedgerTest(unittest.TestCase):
             self.assertEqual(later.count("market-1"), 164)
             self.assertIsNone(later.count("old"))
             self.assertIsNone(later.count("never-counted"))
+
+
+class ResolverDigestTest(unittest.TestCase):
+    # Read back from ObservationResolver.digest on a local deployment at chain
+    # 31337. abi_test.go in the API pins the same value.
+    def test_it_is_the_digest_the_resolver_computes(self):
+        body = {"marketId": "market-1", "chainId": 31337,
+                "resolver": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+                "observedValue": 164, "winningOutcomeId": "yes", "evidenceRoot": "",
+                "ruleHash": "0x" + "ab" * 32, "observedAt": 1789422312}
+        self.assertEqual(digest(body).hex(), "c523333bb075065df99e3e7ba40aa44c6da5fc216a63647aaf334e28de5a27b6")
