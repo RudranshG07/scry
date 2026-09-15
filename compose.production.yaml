@@ -1,0 +1,140 @@
+name: scry
+
+# Everything Scry runs, on one machine, behind Caddy for HTTPS.
+#
+#   docker compose -f compose.production.yaml --env-file .env.production up -d --build
+#
+# .env.production follows infrastructure/production.env.example and is never
+# committed. Each container is handed only the secrets it uses: the API never
+# sees an observer's key, and an observer never sees the operator's.
+services:
+  timescale:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scry
+      POSTGRES_USER: scry
+      POSTGRES_PASSWORD: ${SCRY_POSTGRES_PASSWORD:?SCRY_POSTGRES_PASSWORD is required}
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U scry -d scry]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  api:
+    build: ./services/api-go
+    restart: unless-stopped
+    depends_on:
+      timescale:
+        condition: service_healthy
+    environment:
+      SCRY_DATABASE_URL: postgres://scry:${SCRY_POSTGRES_PASSWORD}@timescale:5432/scry?sslmode=disable
+      SCRY_HTTP_ADDR: :8080
+      SCRY_ALLOWED_ORIGIN: https://${SCRY_DOMAIN:?SCRY_DOMAIN is required}
+      SCRY_OBSERVERS: ${SCRY_OBSERVERS:?SCRY_OBSERVERS is required}
+      SCRY_OBSERVER_PAIRS: ${SCRY_OBSERVER_PAIRS:-1}
+      SCRY_OPERATOR_TOKEN: ${SCRY_OPERATOR_TOKEN:-}
+      SCRY_CHAINS: ${SCRY_CHAINS:-}
+      SCRY_OPERATOR_KEY: ${SCRY_OPERATOR_KEY:-}
+      SCRY_RPC_8453: ${SCRY_RPC_8453:-}
+      SCRY_FACTORY_8453: ${SCRY_FACTORY_8453:-}
+      SCRY_RESOLVER_8453: ${SCRY_RESOLVER_8453:-}
+      SCRY_RPC_137: ${SCRY_RPC_137:-}
+      SCRY_FACTORY_137: ${SCRY_FACTORY_137:-}
+      SCRY_RESOLVER_137: ${SCRY_RESOLVER_137:-}
+      SCRY_RPC_84532: ${SCRY_RPC_84532:-}
+      SCRY_FACTORY_84532: ${SCRY_FACTORY_84532:-}
+      SCRY_RESOLVER_84532: ${SCRY_RESOLVER_84532:-}
+      SCRY_RPC_80002: ${SCRY_RPC_80002:-}
+      SCRY_FACTORY_80002: ${SCRY_FACTORY_80002:-}
+      SCRY_RESOLVER_80002: ${SCRY_RESOLVER_80002:-}
+
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SCRY_API_URL: https://api.${SCRY_DOMAIN}
+        NEXT_PUBLIC_SCRY_WS_URL: wss://api.${SCRY_DOMAIN}
+        NEXT_PUBLIC_SCRY_HLS_BASE_URL: https://media.${SCRY_DOMAIN}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SCRY_MEDIA_ORIGIN: https://media.${SCRY_DOMAIN}
+
+  relay:
+    build: ./infrastructure/relay
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SCRY_API: http://api:8080
+    volumes:
+      - ./infrastructure/mediamtx.yml:/mediamtx.yml:ro
+
+  inspector:
+    build: ./services/vision
+    restart: unless-stopped
+    depends_on:
+      - api
+    command: [scry_vision.inspector, --api, "http://api:8080", --every, "60"]
+    volumes:
+      - inspector-data:/data
+
+  # Separate volumes, not one shared: two observers downloading the same weights
+  # into one directory at the same moment can each leave the other a torn file.
+  observer-primary:
+    build: ./services/vision
+    restart: unless-stopped
+    depends_on:
+      - api
+      - relay
+    command: [scry_vision.worker, --api, "http://api:8080", --relay, "http://relay:8888",
+              --observer, vision-01, --role, primary_vision, --poll, "10"]
+    environment:
+      SCRY_OBSERVER_KEY: ${SCRY_PRIMARY_OBSERVER_KEY:?SCRY_PRIMARY_OBSERVER_KEY is required}
+    volumes:
+      - primary-data:/data
+
+  observer-verify:
+    build: ./services/vision
+    restart: unless-stopped
+    depends_on:
+      - api
+      - relay
+    command: [scry_vision.worker, --api, "http://api:8080", --relay, "http://relay:8888",
+              --observer, verify-01, --role, verification, --poll, "10"]
+    environment:
+      SCRY_OBSERVER_KEY: ${SCRY_VERIFY_OBSERVER_KEY:?SCRY_VERIFY_OBSERVER_KEY is required}
+    volumes:
+      - verify-data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+      - relay
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SCRY_DOMAIN: ${SCRY_DOMAIN}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  timescale-data:
+  inspector-data:
+  primary-data:
+  verify-data:
+  caddy-data:
+  caddy-config:

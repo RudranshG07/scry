@@ -9,6 +9,7 @@ dependencies = [
     "yt-dlp[default]>=2026.8.19",
     "eth-keys>=0.5",
     "eth-hash[pycryptodome]>=0.7",
+    "faster-whisper>=1.2",
 ]
 
 [project.scripts]

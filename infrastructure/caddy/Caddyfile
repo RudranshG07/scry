@@ -1,0 +1,12 @@
+{$SCRY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+api.{$SCRY_DOMAIN} {
+	reverse_proxy api:8080
+}
+
+media.{$SCRY_DOMAIN} {
+	reverse_proxy relay:8888
+}
