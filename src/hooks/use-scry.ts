@@ -54,13 +54,16 @@ export function useNotifications() {
   });
 }
 
+export type ObserverCount = { observerId: string; count: number };
+
 export type MarketFeed = {
   count: number | null;
   rate: number | null;
+  observers: ObserverCount[];
   connected: boolean;
 };
 
-const emptyFeed: MarketFeed = { count: null, rate: null, connected: false };
+const emptyFeed: MarketFeed = { count: null, rate: null, observers: [], connected: false };
 
 export function useMarketFeed(marketId: string): MarketFeed {
   const [feed, setFeed] = useState<MarketFeed & { marketId: string }>({ ...emptyFeed, marketId });
@@ -70,7 +73,25 @@ export function useMarketFeed(marketId: string): MarketFeed {
     return scryApi.subscribeToMarket(marketId, {
       onEvent: (event: MarketUpdate) => {
         if (event.type !== "market.count") return;
-        setFeed({ marketId, count: event.count, rate: event.rate, connected: true });
+        setFeed((current) => {
+          const previous = current.marketId === marketId ? current : { ...emptyFeed, marketId };
+          // Each observer counts the same window on its own, and seeing the two
+          // numbers side by side is the point: they are what has to agree.
+          const observers = event.observerId
+            ? [
+                ...previous.observers.filter((entry) => entry.observerId !== event.observerId),
+                { observerId: event.observerId, count: event.count },
+              ].sort((left, right) => left.observerId.localeCompare(right.observerId))
+            : previous.observers;
+          const highest = observers.reduce((top, entry) => Math.max(top, entry.count), 0);
+          return {
+            marketId,
+            observers,
+            count: observers.length > 0 ? highest : event.count,
+            rate: event.rate || previous.rate,
+            connected: true,
+          };
+        });
       },
       onError: () => setFeed({ ...emptyFeed, marketId }),
     });

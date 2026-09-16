@@ -35,6 +35,7 @@ type Server struct {
 	operatorToken  string
 	observers      map[string]string
 	chains         []config.Chain
+	progress       *progressBoard
 	log            *slog.Logger
 }
 
@@ -50,6 +51,7 @@ func New(data store.Store, issuer PlaybackTokenIssuer, allowedOrigin string) *Se
 		operatorToken:  strings.TrimSpace(os.Getenv("SCRY_OPERATOR_TOKEN")),
 		observers:      registeredObservers(os.Getenv("SCRY_OBSERVERS")),
 		chains:         config.Chains(),
+		progress:       newProgressBoard(),
 		log:            slog.Default(),
 	}
 	server.routes()
@@ -75,6 +77,7 @@ func (server *Server) routes() {
 	server.mux.HandleFunc("POST /v1/streams/{id}/qualification", server.postQualification)
 	server.mux.HandleFunc("GET /v1/markets/{id}/stream", server.marketStream)
 	server.mux.HandleFunc("POST /v1/markets/{id}/observations", server.postObservation)
+	server.mux.HandleFunc("POST /v1/markets/{id}/progress", server.postProgress)
 	server.mux.HandleFunc("GET /v1/chains", server.getChains)
 	server.mux.HandleFunc("POST /v1/markets/{id}/deployments", server.postDeployment)
 	server.mux.HandleFunc("POST /v1/markets/{id}/attestations", server.postAttestation)
@@ -95,7 +98,7 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 	if request.Method == http.MethodOptions {
 		writer.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
-		writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		writer.WriteHeader(http.StatusNoContent)
 		return
 	}

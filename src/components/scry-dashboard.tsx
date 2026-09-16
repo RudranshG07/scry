@@ -146,6 +146,7 @@ export function ScryDashboard({ initialMarketId }: { initialMarketId?: string })
                   state={feedState}
                   observedCount={feed.count}
                   currentRate={feed.rate ?? market.currentRate}
+                  observers={feed.observers}
                   connected={feed.connected && feedState === "ready"}
                   onRefresh={refreshFeed}
                 />

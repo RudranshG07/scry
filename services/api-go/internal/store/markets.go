@@ -138,7 +138,7 @@ func (s *Postgres) fill(ctx context.Context, ms []domain.Market) ([]domain.Marke
 
 func (s *Postgres) outcomes(ctx context.Context, ids []string) (map[string][]domain.MarketOutcome, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT o.market_id, o.outcome_id, o.label,
+		SELECT o.market_id, o.outcome_id, o.label, o.minimum_value, o.maximum_value,
 		       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
 		                 WHERE p.market_id = o.market_id AND p.outcome_id = o.outcome_id), 0)::float8,
 		       COALESCE((SELECT SUM(p.amount) FROM projected_positions p
@@ -156,7 +156,7 @@ func (s *Postgres) outcomes(ctx context.Context, ids []string) (map[string][]dom
 		var id string
 		var o domain.MarketOutcome
 		var staked, total float64
-		if err := rows.Scan(&id, &o.ID, &o.Label, &staked, &total); err != nil {
+		if err := rows.Scan(&id, &o.ID, &o.Label, &o.Minimum, &o.Maximum, &staked, &total); err != nil {
 			return nil, fmt.Errorf("scan outcomes: %w", err)
 		}
 		o.Probability, o.ReturnRate = price(staked, total)

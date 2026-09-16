@@ -15,7 +15,9 @@ export const networks: readonly Network[] = [
   { chainId: 137, name: "Polygon", testnet: false, rpcUrl: "https://polygon-rpc.com", explorer: "https://polygonscan.com", currency: pol },
   { chainId: 84532, name: "Base Sepolia", testnet: true, rpcUrl: "https://sepolia.base.org", explorer: "https://sepolia.basescan.org", currency: ether },
   { chainId: 80002, name: "Polygon Amoy", testnet: true, rpcUrl: "https://rpc-amoy.polygon.technology", explorer: "https://amoy.polygonscan.com", currency: pol },
-  { chainId: 31337, name: "Local chain", testnet: true, rpcUrl: "http://127.0.0.1:8545", explorer: "", currency: ether },
+  // Not 31337: that is every other anvil on a developer machine, and a wallet that
+  // already knows it sends the deposit to whichever chain it met first.
+  { chainId: 31338, name: "Scry local", testnet: true, rpcUrl: "http://127.0.0.1:8546", explorer: "", currency: ether },
 ];
 
 export function networkFor(chainId: number | null | undefined): Network | null {

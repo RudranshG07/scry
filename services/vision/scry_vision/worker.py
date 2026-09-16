@@ -75,8 +75,24 @@ def get(url: str) -> object:
 WATCHABLE = ("Scheduled", "Open", "Locked", "Observing")
 
 
+def share(markets: list[dict], pair: int | None, pairs: int) -> list[dict]:
+    """The cameras this pair is responsible for.
+
+    Several pairs run at once, one camera each, and nothing coordinates them.
+    Every pair sorts the cameras that have windows the same way and takes every
+    pairs-th one, so two pairs never land on the same market and no camera is
+    left with nobody counting it.
+    """
+    if pair is None or pairs < 2:
+        return markets
+    cameras = sorted({market["streamId"] for market in markets})
+    mine = {camera for index, camera in enumerate(cameras) if index % pairs == pair}
+    return [market for market in markets if market["streamId"] in mine]
+
+
 def pick(markets: list[dict], stream: str | None, market_id: str | None,
-         watchable: set[str] | None = None) -> dict | None:
+         watchable: set[str] | None = None, pair: int | None = None,
+         pairs: int = 1) -> dict | None:
     """The next window this observer should be counting.
 
     Soonest first, so an observer free right now takes the window that opens
@@ -93,6 +109,7 @@ def pick(markets: list[dict], stream: str | None, market_id: str | None,
         if watchable is not None and market["streamId"] not in watchable:
             continue
         due.append(market)
+    due = share(due, pair, pairs)
     if not due:
         return None
     return min(due, key=lambda market: market.get("observationStartsAt") or "")
@@ -224,11 +241,12 @@ def slot(market: dict, cap: float) -> tuple[datetime, datetime]:
 
 def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
         observer: str, role: str, cap: float, poll: float, source: str | None = None,
-        relay: str | None = None, ledger=None) -> int:
+        relay: str | None = None, ledger=None, pair: int | None = None,
+        pairs: int = 1) -> int:
     # Imported here so the pairing logic above stays testable without OpenCV.
     import scry_vision  # noqa: F401  registers the observers
     from .claims import Claim, observer_for
-    from .observer import submit
+    from .observer import Progress, submit
 
     print(f"observing {stream or 'any stream'} as {role}", flush=True)
     done: set[str] = set()
@@ -253,7 +271,8 @@ def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
         # and sit out the window it had claimed.
         sources = {stream: source} if stream and source else sources_from(api)
         market = pick(markets, stream, market_id,
-                      None if camera else set(sources) | ({stream} if stream else set()))
+                      None if camera else set(sources) | ({stream} if stream else set()),
+                      pair=pair, pairs=pairs)
         if market is None:
             print(f"no window open on {stream or 'any stream'}, waiting", flush=True)
             time.sleep(poll)
@@ -352,7 +371,8 @@ def run(api: str, stream: str | None, camera: str | None, market_id: str | None,
             done.add(market["id"])
             continue
 
-        reading = watcher.observe(watching, claim, left, role)
+        reading = watcher.observe(watching, claim, left, role,
+                                  progress=Progress(api, market["id"], observer, role))
         result = as_report(reading, left)
         # Uptime is a share of the market's window, not of the stretch this
         # observer happened to watch. A late join that saw perfect footage for
@@ -394,6 +414,10 @@ def main() -> int:
     parser.add_argument("--max-seconds", type=float, default=240,
                         help="safety bound on one observation; covers a whole window")
     parser.add_argument("--poll", type=float, default=15)
+    parser.add_argument("--pair", type=int,
+                        help="which share of the cameras this pair takes, counting from 0")
+    parser.add_argument("--pairs", type=int, default=1,
+                        help="how many observer pairs are running")
     args = parser.parse_args()
 
     import os
@@ -422,7 +446,8 @@ def main() -> int:
             parser.error("--camera and --youtube name one camera, so they need --stream")
         try:
             return run(args.api, None, None, args.market, args.observer,
-                       args.role, args.max_seconds, args.poll, relay=args.relay, ledger=ledger)
+                       args.role, args.max_seconds, args.poll, relay=args.relay, ledger=ledger,
+                       pair=args.pair, pairs=args.pairs)
         except StreamMismatch as error:
             print(f"refusing to report: {error}", file=sys.stderr)
             return 2
@@ -448,7 +473,8 @@ def main() -> int:
     try:
         return run(args.api, args.stream, camera, args.market, args.observer,
                    args.role, args.max_seconds, args.poll,
-                   source=args.youtube, relay=args.relay, ledger=ledger)
+                   source=args.youtube, relay=args.relay, ledger=ledger,
+                   pair=args.pair, pairs=args.pairs)
     except StreamMismatch as error:
         print(f"refusing to report: {error}", file=sys.stderr)
         return 2

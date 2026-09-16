@@ -795,3 +795,38 @@ class TakesWhateverIsDue(unittest.TestCase):
             self.window("stream-b", "b-1", "2026-08-17T20:10:00Z"),
         ]
         self.assertEqual(pick(markets, "stream-b", None)["id"], "b-1")
+
+
+class PairShareTest(unittest.TestCase):
+    """Several pairs run at once, and nothing tells them apart but this."""
+
+    def markets(self):
+        return [
+            {"id": "a-1", "streamId": "camera-a", "status": "Open",
+             "observationStartsAt": "2026-09-16T00:10:00Z"},
+            {"id": "b-1", "streamId": "camera-b", "status": "Open",
+             "observationStartsAt": "2026-09-16T00:05:00Z"},
+            {"id": "c-1", "streamId": "camera-c", "status": "Open",
+             "observationStartsAt": "2026-09-16T00:01:00Z"},
+        ]
+
+    def test_three_pairs_cover_every_camera_once(self):
+        from scry_vision.worker import pick
+
+        taken = [pick(self.markets(), None, None, pair=index, pairs=3)["streamId"] for index in range(3)]
+        self.assertEqual(sorted(taken), ["camera-a", "camera-b", "camera-c"])
+        self.assertEqual(len(set(taken)), 3, "two pairs landed on the same camera")
+
+    def test_a_pair_takes_the_soonest_window_among_its_own(self):
+        from scry_vision.worker import pick
+
+        # Cameras sort a, b, c, so the first of two pairs holds a and c, and c
+        # opens first.
+        self.assertEqual(pick(self.markets(), None, None, pair=0, pairs=2)["streamId"], "camera-c")
+        self.assertEqual(pick(self.markets(), None, None, pair=1, pairs=2)["streamId"], "camera-b")
+
+    def test_one_pair_still_takes_the_soonest_anywhere(self):
+        from scry_vision.worker import pick
+
+        self.assertEqual(pick(self.markets(), None, None)["streamId"], "camera-c")
+

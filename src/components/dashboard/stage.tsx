@@ -4,10 +4,12 @@ import { CircleAlert, RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { StreamPlayer } from "@/components/stream-player";
 import type { ResolvedStream } from "@/app/api/streams/[marketId]/route";
+import type { ObserverCount } from "@/hooks/use-scry";
 import type { Market } from "@/lib/domain";
 import { formatCount, formatRate } from "@/lib/format";
 import { sourcesFor } from "@/lib/markets";
 import { marketPhase } from "@/lib/time";
+import { countLine } from "@/lib/video";
 
 export type FeedState = "ready" | "loading" | "error";
 
@@ -41,6 +43,7 @@ export function Stage({
   state,
   observedCount,
   currentRate,
+  observers,
   connected,
   onRefresh,
 }: {
@@ -49,6 +52,7 @@ export function Stage({
   state: FeedState;
   observedCount: number | null;
   currentRate: number | null;
+  observers: ObserverCount[];
   connected: boolean;
   onRefresh: () => void;
 }) {
@@ -59,6 +63,8 @@ export function Stage({
   const handleSourceChange = useCallback((source: ResolvedStream | null) => setActiveSource(source), []);
   const isLiveSource = Boolean(activeSource?.live) && phase.isLive && connected;
   const unit = market.unit ?? "events";
+  // The bar this market turns on: the winning band starts one above it.
+  const above = market.outcomes.find((outcome) => typeof outcome.minimum === "number")?.minimum;
 
   return (
     <div>
@@ -68,6 +74,7 @@ export function Stage({
         marketId={market.streamId}
         onSourceChange={handleSourceChange}
         label={`${market.city} ${market.location}`}
+        line={countLine(market.claim)}
         fallback={<LiveScene market={market} />}
       />
       {!isRealFeed && <div className="stream-noise pointer-events-none absolute inset-0 opacity-50" />}
@@ -145,6 +152,23 @@ export function Stage({
           <span className="ml-1.5 text-xs text-muted-foreground">/min</span>
         </p>
       </div>
+      {observers.length > 0 && (
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Counting now</p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-4">
+            {observers.map((entry) => (
+              <p className="font-mono text-xl tabular-nums" key={entry.observerId}>
+                {formatCount(entry.count)}
+                <span className="ml-1.5 text-[11px] text-muted-foreground">{entry.observerId}</span>
+              </p>
+            ))}
+          </div>
+          {typeof above === "number" && (
+            <p className="mt-1 text-[11px] text-muted-foreground">settles above {formatCount(above - 1)}</p>
+          )}
+        </div>
+      )}
+
       {isRealFeed && (
         <p className="ml-auto max-w-64 text-right text-[11px] leading-4 text-muted-foreground">
           {activeSource ? `${activeSource.live ? "Live source" : "Fallback"}: ${activeSource.name}` : "Selecting a live source"}

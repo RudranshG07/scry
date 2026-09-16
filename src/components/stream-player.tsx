@@ -3,6 +3,7 @@
 import { CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ResolvedStream } from "@/app/api/streams/[marketId]/route";
+import { coverBox, type Box, type CountLine } from "@/lib/video";
 
 type PlaybackState = "resolving" | "loading" | "ready" | "error";
 
@@ -19,18 +20,42 @@ export function StreamPlayer({
   marketId,
   label,
   fallback,
+  line,
   onSourceChange,
 }: {
   marketId: string;
   label: string;
   fallback: ReactNode;
+  line?: CountLine | null;
   onSourceChange?: (source: ResolvedStream | null) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  // Where the frame sits inside the box after the crop, so the line is drawn
+  // across the footage rather than across the element.
+  const [framed, setFramed] = useState<Box | null>(null);
   const [state, setState] = useState<PlaybackState>("resolving");
   const [stream, setStream] = useState<ResolvedStream | null>(null);
   const [attempt, setAttempt] = useState(0);
   const retries = useRef(0);
+
+  const place = useCallback(() => {
+    const video = videoRef.current;
+    const frame = frameRef.current;
+    if (!video || !frame) return;
+    const box = frame.getBoundingClientRect();
+    setFramed(coverBox({ width: video.videoWidth, height: video.videoHeight }, { width: box.width, height: box.height }));
+  }, []);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!line || !frame || typeof ResizeObserver === "undefined") return;
+    // The observer fires once on its own when it starts watching, which is the
+    // first placement; calling place() here would be a render-time write.
+    const size = new ResizeObserver(place);
+    size.observe(frame);
+    return () => size.disconnect();
+  }, [line, place]);
 
   useEffect(() => {
     onSourceChange?.(stream);
@@ -147,7 +172,7 @@ export function StreamPlayer({
   }, [stream, retry]);
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0" ref={frameRef}>
       {fallback}
       <video
         ref={videoRef}
@@ -159,10 +184,34 @@ export function StreamPlayer({
         loop={stream?.kind === "video"}
         playsInline
         preload="metadata"
-        onCanPlay={() => setState("ready")}
+        onCanPlay={() => { setState("ready"); place(); }}
         onPlaying={() => setState("ready")}
+        onLoadedMetadata={place}
         onError={retry}
       />
+
+      {line && framed && state === "ready" && (
+        <svg
+          className="pointer-events-none absolute"
+          style={{ left: framed.left, top: framed.top, width: framed.width, height: framed.height }}
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <line
+            x1={line.from[0]}
+            y1={line.from[1]}
+            x2={line.to[0]}
+            y2={line.to[1]}
+            stroke="var(--accent)"
+            strokeWidth={2}
+            strokeDasharray="7 7"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle cx={line.from[0]} cy={line.from[1]} r={3} fill="var(--accent)" vectorEffect="non-scaling-stroke" />
+          <circle cx={line.to[0]} cy={line.to[1]} r={3} fill="var(--accent)" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
 
       {(state === "resolving" || state === "loading") && (
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-black/60 px-4 py-2 backdrop-blur-sm" role="status">

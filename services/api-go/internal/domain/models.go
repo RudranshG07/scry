@@ -17,6 +17,10 @@ type MarketOutcome struct {
 	Label       string  `json:"label"`
 	Probability float64 `json:"probability"`
 	ReturnRate  float64 `json:"returnRate"`
+	// The band this outcome covers, so a page watching a window can say how far
+	// the count still is from the bar rather than only naming it in the label.
+	Minimum *int64 `json:"minimum,omitempty"`
+	Maximum *int64 `json:"maximum,omitempty"`
 }
 
 type Market struct {

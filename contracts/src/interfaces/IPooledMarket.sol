@@ -19,6 +19,7 @@ interface IPooledMarket {
     function refund() external returns (uint256 amount);
     function status() external view returns (ScryTypes.MarketStatus);
     function ruleHash() external view returns (bytes32);
+    function marketId() external view returns (bytes32);
     function poolFor(bytes32 outcomeId) external view returns (uint256);
     function positionOf(address account, bytes32 outcomeId) external view returns (uint256);
 }

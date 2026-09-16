@@ -10,7 +10,9 @@ from .capture import open_capture
 import json
 import os
 import statistics
+import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -260,3 +262,61 @@ def submit(api: str, market: str, observer: str, role: str, result: dict) -> tup
             return response.status, response.read().decode()
     except urllib.error.HTTPError as error:
         return error.code, error.read().decode()
+
+
+class Progress:
+    """Sends the running count to the API while the window is still open.
+
+    Best effort, and never in the way of counting: one post at a time, dropped
+    if the last has not come back, every failure swallowed. A live number that
+    fails to arrive is missing from a screen; the report at the end is what
+    settles the market.
+    """
+
+    def __init__(self, api: str, market: str, observer: str, role: str, every: float = 3.0) -> None:
+        self.api = api.rstrip("/")
+        self.market = market
+        self.observer = observer
+        self.role = role
+        self.every = every
+        self.last = 0.0
+        self.sending = threading.Lock()
+
+    def __call__(self, count: int, elapsed: float) -> None:
+        now = time.monotonic()
+        if now - self.last < self.every:
+            return
+        self.last = now
+        threading.Thread(target=self._post, args=(count, elapsed), daemon=True).start()
+
+    def _post(self, count: int, elapsed: float) -> None:
+        # One at a time. A post still in flight means the API is slower than the
+        # counting loop, and the newer number is worth more than a queue of old
+        # ones.
+        if not self.sending.acquire(blocking=False):
+            return
+        try:
+            self.send(count, elapsed)
+        except Exception:
+            pass
+        finally:
+            self.sending.release()
+
+    def send(self, count: int, elapsed: float) -> None:
+        body = json.dumps({
+            "observerId": self.observer,
+            "role": self.role,
+            "count": int(count),
+            "elapsedSeconds": round(float(elapsed), 1),
+        }).encode()
+        request = urllib.request.Request(
+            f"{self.api}/v1/markets/{self.market}/progress",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json",
+                     "X-Scry-Signature": sign_report(os.environ["SCRY_OBSERVER_KEY"], self.market, body)})
+        try:
+            with urllib.request.urlopen(request, timeout=5):
+                return
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError):
+            return
+

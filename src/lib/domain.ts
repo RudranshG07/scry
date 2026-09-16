@@ -39,6 +39,8 @@ export type MarketOutcome = {
   label: string;
   probability: number;
   returnRate: number;
+  minimum?: number;
+  maximum?: number;
 };
 
 export const deploymentStates = ["Requested", "Created", "Proposed", "Finalized", "Voided", "Unfunded", "Failed"] as const;
@@ -75,6 +77,7 @@ export type Market = {
   baseline: number;
   observers: number;
   observersRequired: number;
+  claim: { kind: ClaimKind; target: string; options?: Record<string, unknown> };
   deployments: MarketDeployment[];
   opensAt: string;
   locksAt: string;
@@ -175,7 +178,7 @@ export type ScryNotification = {
 
 export type MarketUpdate =
   | { type: "market.probability"; marketId: string; outcomeId: string; probability: number; recordedAt: string }
-  | { type: "market.count"; marketId: string; count: number; rate: number; recordedAt: string }
+  | { type: "market.count"; marketId: string; observerId?: string; count: number; rate: number; recordedAt: string }
   | { type: "market.status"; marketId: string; status: MarketStatus; recordedAt: string }
   | { type: "observer.status"; marketId: string; observerId: string; state: ObserverState; recordedAt: string };
 

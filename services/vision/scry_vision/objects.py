@@ -32,7 +32,8 @@ class Objects:
             return False, f"no {claim.target} appeared"
         return True, f"about {reading.count} {claim.target} in view"
 
-    def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
+    def observe(self, url: str, claim: Claim, seconds: float, role: str,
+                progress=None) -> Reading:
         import time
         from datetime import UTC, datetime
 

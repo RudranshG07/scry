@@ -8,8 +8,8 @@ import {ScryTypes} from "./ScryTypes.sol";
 /// @notice Carries a result from the observers to the market it settles.
 ///
 /// A proposal needs enough signatures from distinct registered observers over
-/// the exact result, and the result must name the market's rule hash, so a valid
-/// reading of one market cannot be replayed against another. The signed digest
+/// the exact result, and the result must name the market and its rule hash, so a
+/// valid reading of one market cannot be replayed against another. The signed digest
 /// is EIP-712 and names this chain and this resolver, so a reading signed for a
 /// testnet deployment cannot be replayed against mainnet either.
 ///
@@ -53,6 +53,7 @@ contract ObservationResolver is IObservationResolver {
     error NotAdmin();
     error NotOperator();
     error AlreadyProposed();
+    error MarketMismatch();
     error RuleMismatch();
     error TooFewSignatures();
     error SignaturesOutOfOrder();
@@ -93,6 +94,10 @@ contract ObservationResolver is IObservationResolver {
     {
         if (_proposals[market].exists) revert AlreadyProposed();
         if (result.invalid) revert ResultMarkedInvalid();
+        // Rule hashes are unique only because the API happens to hash the market id
+        // into them. The id is checked here so that stays true on chain whatever
+        // the API does.
+        if (result.marketId != IPooledMarket(market).marketId()) revert MarketMismatch();
         if (result.ruleHash != IPooledMarket(market).ruleHash()) revert RuleMismatch();
 
         _verify(result, signatures);

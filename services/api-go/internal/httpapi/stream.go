@@ -22,6 +22,7 @@ type marketUpdate struct {
 	OutcomeID   string  `json:"outcomeId,omitempty"`
 	Probability float64 `json:"probability,omitempty"`
 	Count       int64   `json:"count,omitempty"`
+	ObserverID  string  `json:"observerId,omitempty"`
 	Rate        float64 `json:"rate,omitempty"`
 	Status      string  `json:"status,omitempty"`
 	RecordedAt  string  `json:"recordedAt"`
@@ -62,6 +63,17 @@ func (server *Server) marketStream(writer http.ResponseWriter, request *http.Req
 		}
 
 		now := time.Now().UTC().Format(time.RFC3339Nano)
+
+		// What each observer has counted so far, while the window is open. The
+		// settled figure below only exists once it is over.
+		for _, live := range server.progress.of(marketID) {
+			if err := wsjson.Write(ctx, socket, marketUpdate{
+				Type: "market.count", MarketID: market.ID, ObserverID: live.ObserverID,
+				Count: live.Count, Rate: perMinute(live.Count, live.Elapsed), RecordedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
 
 		if observed := observedCount(market); observed > 0 {
 			if err := wsjson.Write(ctx, socket, marketUpdate{

@@ -31,7 +31,7 @@ func TestConsensus(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, agreed := consensus(c.counts, minObservers)
+			got, _, agreed := consensus(c.counts, minObservers)
 			if agreed != c.agreed {
 				t.Fatalf("agreed = %v, want %v", agreed, c.agreed)
 			}
@@ -130,19 +130,19 @@ func TestAllowedSpreadScalesWithVolume(t *testing.T) {
 }
 
 func TestConsensusAcceptsWhatIndependentDetectorsAchieve(t *testing.T) {
-	if value, ok := consensus([]int64{35, 30}, minObservers); !ok || value != 35 {
+	if value, _, ok := consensus([]int64{35, 30}, minObservers); !ok || value != 35 {
 		t.Errorf("35 and 30 = %d, %v; two models on the same window measured this", value, ok)
 	}
-	if _, ok := consensus([]int64{127, 135}, minObservers); !ok {
+	if _, _, ok := consensus([]int64{127, 135}, minObservers); !ok {
 		t.Error("127 and 135 is 6.3% and should stand")
 	}
-	if _, ok := consensus([]int64{38, 59}, minObservers); ok {
+	if _, _, ok := consensus([]int64{38, 59}, minObservers); ok {
 		t.Error("38 and 59 is 55% and must not settle a market")
 	}
 }
 
 func TestConsensusStillRejectsWildDisagreement(t *testing.T) {
-	if _, ok := consensus([]int64{100, 200}, minObservers); ok {
+	if _, _, ok := consensus([]int64{100, 200}, minObservers); ok {
 		t.Error("100 and 200 agreed; 5% of 100 is 5, not 100")
 	}
 }
@@ -282,5 +282,78 @@ func TestTheQuestionNamesWhatIsActuallyCounted(t *testing.T) {
 		if got != c.want {
 			t.Errorf("target %q with unit %q gave %q, want %q", c.target, c.unit, got, c.want)
 		}
+	}
+}
+
+func TestCountsOnOppositeSidesOfTheBarDoNotSettle(t *testing.T) {
+	bands := []band{{id: "yes", min: ptr(121)}, {id: "no", max: ptr(120)}}
+
+	if !split([]int64{118, 124}, bands, "yes") {
+		t.Error("118 and 124 answer a bar of 120 opposite ways, which is not agreement about the answer")
+	}
+	if split([]int64{121, 124}, bands, "yes") {
+		t.Error("both readings are above the bar")
+	}
+	if split([]int64{111, 120}, bands, "no") {
+		t.Error("both readings are at or below the bar")
+	}
+}
+
+func TestConsensusHandsBackTheReadingsThatAgreed(t *testing.T) {
+	value, agreeing, ok := consensus([]int64{9, 180, 181, 182}, minObservers)
+	if !ok || value != 181 {
+		t.Fatalf("value = %d, agreed = %v", value, ok)
+	}
+	if len(agreeing) != 3 || agreeing[0] != 180 {
+		t.Errorf("agreeing = %v, want the cluster with the outlier left out", agreeing)
+	}
+}
+
+func TestWindowsRunBackToBackOnACamera(t *testing.T) {
+	now := timeAt(1_000_000)
+
+	starts, ends := nextWindow(now, time.Time{})
+	if !starts.Equal(now.Add(firstWindowIn)) {
+		t.Errorf("a camera with no window starts at %v, want %v", starts, now.Add(firstWindowIn))
+	}
+	if ends.Sub(starts) != observeWindow {
+		t.Errorf("window ran %v, want %v", ends.Sub(starts), observeWindow)
+	}
+
+	previous := now.Add(10 * time.Minute)
+	queued, _ := nextWindow(now, previous)
+	if !queued.Equal(previous.Add(restBetweenMarkets)) {
+		t.Errorf("next window at %v, want a minute after the one before it", queued)
+	}
+
+	stale, _ := nextWindow(now, now.Add(-time.Hour))
+	if stale.Before(now) {
+		t.Errorf("scheduled a window in the past at %v", stale)
+	}
+}
+
+func TestIdleCamerasWaitForAFreeObserverPair(t *testing.T) {
+	plans := []streamPlan{
+		{id: "busy", active: true, upcoming: 1},
+		{id: "full", active: true, upcoming: marketsAhead},
+		{id: "idle-1"},
+		{id: "idle-2"},
+	}
+	scheduled := func(cameras int) string {
+		var ids []string
+		for _, p := range due(plans, cameras) {
+			ids = append(ids, p.id)
+		}
+		return strings.Join(ids, ",")
+	}
+
+	if got := scheduled(2); got != "busy" {
+		t.Errorf("with two pairs scheduled %q; both are already on a camera, and full has its queue", got)
+	}
+	if got := scheduled(3); got != "busy,idle-1" {
+		t.Errorf("with three pairs scheduled %q; the spare pair should start one idle camera", got)
+	}
+	if got := scheduled(9); got != "busy,idle-1,idle-2" {
+		t.Errorf("with pairs to spare scheduled %q", got)
 	}
 }

@@ -43,6 +43,9 @@ WIDTH, HEIGHT = 1280, 720
 # them comparable at all. Eight is enough for ByteTrack to hold a road user
 # across the line at ordinary speeds.
 SAMPLE_FPS = 8.0
+
+# How often the running count is handed out while the window is open.
+PROGRESS_EVERY = 3.0
 SAMPLE_INTERVAL = 1.0 / SAMPLE_FPS
 
 # Tolerance on that interval, so a source already arriving at the sampling rate
@@ -118,7 +121,8 @@ class Crossings:
             return False, "things are moving but none of them cross the line"
         return True, f"{reading.count} crossings in {seconds:.0f}s"
 
-    def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
+    def observe(self, url: str, claim: Claim, seconds: float, role: str,
+                progress=None) -> Reading:
         import cv2
 
         line = line_from(claim)
@@ -173,6 +177,7 @@ class Crossings:
         samples: list[dict] = []
         bucket_started = started
         bucket_base = 0
+        told = started
 
         while datetime.now(UTC).timestamp() < deadline:
             ok, frame = capture.read()
@@ -287,6 +292,11 @@ class Crossings:
                     backward.ingest(sample)
 
             now_at = datetime.now(UTC)
+            if progress is not None and (now_at - told).total_seconds() >= PROGRESS_EVERY:
+                told = now_at
+                progress(forward.count + (backward.count if backward else 0),
+                         (now_at - started).total_seconds())
+
             if (now_at - bucket_started).total_seconds() >= 60:
                 running = forward.count + (backward.count if backward else 0)
                 samples.append({

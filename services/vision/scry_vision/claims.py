@@ -9,7 +9,7 @@ without the engine, the quorum or the contracts knowing about it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,13 @@ class Claim:
     @property
     def label(self) -> str:
         return f"{self.kind}:{self.target}"
+
+
+# Called with the running count and how many seconds have been counted, while
+# the window is still open, so the number on screen moves with the footage.
+# Best effort by contract: an observer must never stop counting because nobody
+# was listening.
+Progress = Callable[[int, float], None]
 
 
 @dataclass(frozen=True)
@@ -61,7 +68,8 @@ class Observer(Protocol):
     def qualify(self, url: str, claim: Claim, seconds: float) -> tuple[bool, str]:
         """Whether this stream can support this claim at all."""
 
-    def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading: ...
+    def observe(self, url: str, claim: Claim, seconds: float, role: str,
+                progress: Progress | None = None) -> Reading: ...
 
 
 _observers: dict[str, Observer] = {}

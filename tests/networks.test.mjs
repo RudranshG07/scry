@@ -19,5 +19,5 @@ test("an unknown chain has no network and no explorer link", () => {
   assert.equal(networkFor(1), null);
   assert.equal(transactionUrl(1, "0xabc"), null);
   assert.equal(transactionUrl(8453, "0xabc"), "https://basescan.org/tx/0xabc");
-  assert.equal(transactionUrl(31337, "0xabc"), null);
+  assert.equal(transactionUrl(31338, "0xabc"), null);
 });

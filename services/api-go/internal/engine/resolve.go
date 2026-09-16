@@ -63,9 +63,9 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 		return err
 	}
 
-	value, agreed := consensus(counts, minObservers)
+	value, agreeing, agreed := consensus(counts, minObservers)
 	if !agreed {
-		return e.invalidate(ctx, id, len(counts))
+		return e.invalidate(ctx, id, len(counts), "observers did not agree")
 	}
 
 	bands, err := e.bands(ctx, id)
@@ -74,7 +74,13 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 	}
 	outcome, ok := winner(value, bands)
 	if !ok {
-		return e.invalidate(ctx, id, len(counts))
+		return e.invalidate(ctx, id, len(counts), "no outcome covers the count")
+	}
+	// Two counts close enough to agree can still answer the question opposite
+	// ways: 118 and 124 against a bar of 120 are five per cent apart and settle
+	// against each other. Refund rather than pay out on the higher reading.
+	if split(agreeing, bands, outcome) {
+		return e.invalidate(ctx, id, len(counts), "observers split across the bar")
 	}
 
 	root, err := e.evidenceRoot(ctx, id, value)
@@ -98,14 +104,15 @@ func (e *Engine) resolveOne(ctx context.Context, id string) error {
 	return nil
 }
 
-func (e *Engine) invalidate(ctx context.Context, id string, reporting int) error {
+func (e *Engine) invalidate(ctx context.Context, id string, reporting int, reason string) error {
 	_, err := e.pool.Exec(ctx, `
 		UPDATE markets SET status = 'Invalid', updated_at = NOW()
 		WHERE id = $1 AND status = 'Observing'`, id)
 	if err != nil {
 		return fmt.Errorf("invalidate: %w", err)
 	}
-	e.log.Warn("market invalidated", "market", id, "observers", reporting, "needed", minObservers)
+	e.log.Warn("market invalidated", "market", id, "reason", reason,
+		"observers", reporting, "needed", minObservers)
 	e.notify(ctx, id, "Invalid")
 	return nil
 }
@@ -172,9 +179,11 @@ func allowedSpread(base int64) int64 {
 	return max(toleranceFloor, scaled)
 }
 
-func consensus(counts []int64, need int) (int64, bool) {
+// consensus is the value the agreeing observers settle on, with the readings
+// that agreed, so the caller can check they all answer the question the same way.
+func consensus(counts []int64, need int) (int64, []int64, bool) {
 	if len(counts) < need {
-		return 0, false
+		return 0, nil, false
 	}
 
 	sorted := append([]int64(nil), counts...)
@@ -196,9 +205,21 @@ func consensus(counts []int64, need int) (int64, bool) {
 	}
 
 	if len(best) < need {
-		return 0, false
+		return 0, nil, false
 	}
-	return best[len(best)/2], true
+	return best[len(best)/2], best, true
+}
+
+// split reports whether the readings that agreed do not all land in the band the
+// result settles on.
+func split(counts []int64, bands []band, outcome string) bool {
+	for _, count := range counts {
+		side, ok := winner(count, bands)
+		if !ok || side != outcome {
+			return true
+		}
+	}
+	return false
 }
 
 func winner(value int64, bands []band) (string, bool) {

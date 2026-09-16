@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -16,12 +15,27 @@ import (
 )
 
 const (
-	baseChainID        = 8453
-	restBetweenMarkets = 2 * time.Minute
-	openWindow         = 8 * time.Minute
+	baseChainID = 8453
+
 	// short on purpose. most things that spoil a window are a function
 	// of how long it is, and both observers have to get through cleanly
 	observeWindow = 4 * time.Minute
+
+	// Windows run back to back on a camera with a minute between them: an
+	// observer has to file the count it has just taken and be in position for
+	// the next window, and a window it joins late it cannot report on.
+	restBetweenMarkets = time.Minute
+
+	// The first window on a camera that has none, far enough out that there is
+	// something to trade before it locks.
+	firstWindowIn = 3 * time.Minute
+
+	// Unlocked markets a camera keeps, so there is always one with minutes left
+	// on it rather than only one seconds from locking.
+	marketsAhead = 2
+
+	// How long a camera is left alone after failing twice running.
+	benchFor = 30 * time.Minute
 
 	historyWindows = 6
 	historyMinimum = 3
@@ -48,6 +62,11 @@ type streamPlan struct {
 	category  string
 	threshold int64
 	claim     domain.Claim
+	// What this camera already has: markets still open to trade, when the last
+	// window it has scheduled ends, and whether anything of its own is running.
+	upcoming int
+	chainEnd time.Time
+	active   bool
 }
 
 func observable(c domain.Claim) bool {
@@ -119,7 +138,15 @@ func (e *Engine) schedule(ctx context.Context) error {
 		              ORDER BY m.observation_ends_at DESC
 		              LIMIT $3) recent
 		        HAVING count(*) >= $4),
-		       COALESCE(s.default_claim, '{}'::jsonb)
+		       COALESCE(s.default_claim, '{}'::jsonb),
+		       (SELECT count(*) FROM markets m
+		        WHERE m.stream_id = s.id AND m.status IN ('Scheduled', 'Open')),
+		       (SELECT max(m.observation_ends_at) FROM markets m
+		        WHERE m.stream_id = s.id
+		          AND m.status IN ('Scheduled', 'Open', 'Locked', 'Observing')),
+		       EXISTS (SELECT 1 FROM markets m
+		               WHERE m.stream_id = s.id
+		                 AND m.status IN ('Scheduled', 'Open', 'Locked', 'Observing'))
 		FROM streams s
 		WHERE s.status = 'Qualified'
 		  -- A stream with no source cannot be observed, so a market on it could
@@ -136,11 +163,24 @@ func (e *Engine) schedule(ctx context.Context) error {
 		  -- what anyone observed. The stream stays watchable; it just does not
 		  -- take positions until there is enough happening to settle honestly.
 		  AND coalesce((s.qualification->>'provisional')::boolean, false) = false
+		  -- A camera whose last two windows both failed is left alone for half an
+		  -- hour. Every market opened on a feed that is down can only void, and
+		  -- one of these dropped its ingest a minute into every window for a
+		  -- night while its markets kept being scheduled.
 		  AND NOT EXISTS (
-		      SELECT 1 FROM markets m
-		      WHERE m.stream_id = s.id
-		        AND m.status IN ('Scheduled', 'Open', 'Locked', 'Observing')
-		  )`, observeWindow.String(), minObservers, historyWindows, historyMinimum)
+		      SELECT 1 FROM (
+		          SELECT m.status, m.observation_ends_at FROM markets m
+		          WHERE m.stream_id = s.id
+		            AND m.status IN ('Resolved', 'Invalid', 'Result proposed', 'Challenged')
+		          ORDER BY m.observation_ends_at DESC
+		          LIMIT 2
+		      ) recent
+		      HAVING count(*) = 2
+		         AND bool_and(recent.status = 'Invalid')
+		         AND max(recent.observation_ends_at) > NOW() - $5::interval
+		  )
+		ORDER BY s.id`, observeWindow.String(), minObservers, historyWindows, historyMinimum,
+		benchFor.String())
 	if err != nil {
 		return fmt.Errorf("find idle streams: %w", err)
 	}
@@ -150,8 +190,13 @@ func (e *Engine) schedule(ctx context.Context) error {
 	for rows.Next() {
 		var p streamPlan
 		var recent *float64
-		if err := rows.Scan(&p.id, &p.category, &p.threshold, &recent, &p.claim); err != nil {
+		var chainEnd *time.Time
+		if err := rows.Scan(&p.id, &p.category, &p.threshold, &recent, &p.claim,
+			&p.upcoming, &chainEnd, &p.active); err != nil {
 			return err
+		}
+		if chainEnd != nil {
+			p.chainEnd = *chainEnd
 		}
 		if recent != nil {
 			p.threshold = settleNear(*recent)
@@ -171,7 +216,7 @@ func (e *Engine) schedule(ctx context.Context) error {
 		return err
 	}
 
-	for _, p := range plans {
+	for _, p := range due(plans, e.pairs) {
 		if err := e.create(ctx, p); err != nil {
 			e.log.Error("could not schedule market", "stream", p.id, "error", err)
 		}
@@ -179,33 +224,54 @@ func (e *Engine) schedule(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) busyUntil(ctx context.Context) (time.Time, error) {
-	var ends time.Time
-	err := e.pool.QueryRow(ctx, `
-		SELECT observation_ends_at FROM markets
-		WHERE status IN ('Scheduled', 'Open', 'Locked', 'Observing')
-		ORDER BY observation_ends_at DESC
-		OFFSET $1 LIMIT 1`, e.pairs-1).Scan(&ends)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, nil
+// due picks which cameras to schedule now. One already running keeps its queue
+// of unlocked markets topped up; an idle one starts only while an observer pair
+// is free to watch it, because a market nobody counts can only void.
+func due(plans []streamPlan, cameras int) []streamPlan {
+	live := 0
+	for _, p := range plans {
+		if p.active {
+			live++
+		}
 	}
-	return ends, err
+
+	out := make([]streamPlan, 0, len(plans))
+	for _, p := range plans {
+		if p.active {
+			if p.upcoming < marketsAhead {
+				out = append(out, p)
+			}
+			continue
+		}
+		if live >= cameras {
+			continue
+		}
+		live++
+		out = append(out, p)
+	}
+	return out
+}
+
+// nextWindow is when the next window on a camera runs: straight after the one
+// before it, or a few minutes out when the camera has none. Never in the past,
+// however long the camera has been idle.
+func nextWindow(now, chainEnd time.Time) (time.Time, time.Time) {
+	starts := now.Add(firstWindowIn)
+	if queued := chainEnd.Add(restBetweenMarkets); queued.After(starts) {
+		starts = queued
+	}
+	starts = starts.UTC().Truncate(time.Second)
+	return starts, starts.Add(observeWindow)
 }
 
 func (e *Engine) create(ctx context.Context, p streamPlan) error {
-	busy, err := e.busyUntil(ctx)
-	if err != nil {
-		return fmt.Errorf("find free observers: %w", err)
-	}
+	now := time.Now().UTC()
+	locks, ends := nextWindow(now, p.chainEnd)
+	// Open the moment it exists. A market that cannot be traded until some later
+	// minute is one nobody finds while it is still open.
+	opens := now.Truncate(time.Second)
 
-	locks := time.Now().UTC().Add(restBetweenMarkets + openWindow).Truncate(time.Second)
-	if queued := busy.Add(restBetweenMarkets); queued.After(locks) {
-		locks = queued.Truncate(time.Second)
-	}
-	opens := locks.Add(-openWindow)
-	ends := locks.Add(observeWindow)
-
-	id := fmt.Sprintf("%s-%d", p.id, opens.Unix())
+	id := fmt.Sprintf("%s-%d", p.id, locks.Unix())
 	question := questionFor(p.claim, p.threshold, domain.UnitFor(p.category))
 
 	options := []byte("{}")
@@ -223,15 +289,20 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO markets (id, stream_id, chain_id, question, status, rule_hash,
 		                     opens_at, locks_at, observation_starts_at, observation_ends_at,
 		                     claim_kind, claim_target, claim_options)
-		VALUES ($1, $2, $3, $4, 'Scheduled', $5, $6, $7, $7, $8, $9, $10, $11)`,
+		VALUES ($1, $2, $3, $4, 'Scheduled', $5, $6, $7, $7, $8, $9, $10, $11)
+		ON CONFLICT (id) DO NOTHING`,
 		id, p.id, baseChainID, question, ruleHash(id, p.threshold, ends), opens, locks, ends,
 		p.claim.Kind, p.claim.Target, options)
 	if err != nil {
 		return fmt.Errorf("insert market: %w", err)
+	}
+	// Already scheduled, which is what a retry after a failed commit looks like.
+	if tag.RowsAffected() == 0 {
+		return nil
 	}
 
 	above := p.threshold + 1
@@ -251,7 +322,7 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 		return fmt.Errorf("commit: %w", err)
 	}
 
-	e.log.Info("market scheduled", "market", id, "stream", p.id, "opens", opens.Format(time.RFC3339))
+	e.log.Info("market scheduled", "market", id, "stream", p.id, "locks", locks.Format(time.RFC3339))
 	return nil
 }
 

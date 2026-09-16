@@ -35,7 +35,7 @@ if [ -n "${SCRY_ETHERSCAN_KEY:-}" ]; then
 fi
 
 forge script script/Deploy.s.sol --rpc-url "$rpc" --private-key "$SCRY_DEPLOYER_KEY" \
-  --broadcast --slow "${verify[@]}"
+  --broadcast --slow ${verify[@]+"${verify[@]}"}
 
 run="broadcast/Deploy.s.sol/$chain/run-latest.json"
 address_of() {

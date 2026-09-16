@@ -20,7 +20,7 @@ contract PooledMarket is IPooledMarket {
     IERC20 public immutable collateral;
     address public immutable resolver;
     bytes32 public immutable override ruleHash;
-    bytes32 public immutable marketId;
+    bytes32 public immutable override marketId;
     uint64 public immutable locksAt;
     uint64 public immutable observationEndsAt;
 

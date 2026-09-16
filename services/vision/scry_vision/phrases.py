@@ -176,7 +176,10 @@ class Phrases:
             return False, f'nobody said "{claim.target}" while listening'
         return True, f'"{claim.target}" said {reading.count} times in {seconds:.0f}s'
 
-    def observe(self, url: str, claim: Claim, seconds: float, role: str) -> Reading:
+    # progress goes unused: the audio for a whole window is pulled and
+    # transcribed at the end of it, so there is no running count to hand out.
+    def observe(self, url: str, claim: Claim, seconds: float, role: str,
+                progress=None) -> Reading:
         started = datetime.now(UTC)
         audio = pull_audio(url, seconds)
         if audio is None:

@@ -101,6 +101,16 @@ contract ObservationResolverTest {
         resolver.propose(address(market), r, sigs);
     }
 
+    function testAResultForAnotherMarketIsRefused() public {
+        _build();
+        // Signed by real observers under this market's rule, but naming a
+        // different market: a reading of one market must not settle another.
+        ScryTypes.ObservationResult memory r = Fixtures.result("market-2", RULE_HASH, 214, "yes");
+        bytes[] memory sigs = _quorum(r);
+        vm.expectRevert(ObservationResolver.MarketMismatch.selector);
+        resolver.propose(address(market), r, sigs);
+    }
+
     function testASignatureForAnotherDeploymentIsRefused() public {
         _build();
         ObservationResolver elsewhere = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
