@@ -50,7 +50,7 @@ PY
 }
 registry=$(address_of ObserverRegistry)
 resolver=$(address_of ObservationResolver)
-factory=$(address_of MarketFactory)
+book=$(address_of MarketBook)
 
 lower() { printf '%s' "$1" | tr 'A-F' 'a-f'; }
 deployer=$(cast wallet address --private-key "$SCRY_DEPLOYER_KEY")
@@ -70,6 +70,6 @@ done
 cat <<EOF
 
 SCRY_RPC_$chain=$rpc
-SCRY_FACTORY_$chain=$factory
+SCRY_BOOK_$chain=$book
 SCRY_RESOLVER_$chain=$resolver
 EOF

@@ -81,6 +81,13 @@ func AddressFromWord(raw []byte) (string, error) {
 	return Checksum(hexOf(raw[12:32])), nil
 }
 
+// MarketKeyHex is the same key as a string, for the site: a browser cannot
+// hash, and every call it makes to the book names the market this way.
+func MarketKeyHex(marketID string) string {
+	key := MarketKey(marketID)
+	return "0x" + hexOf(key[:])
+}
+
 func MarketKey(marketID string) [32]byte {
 	var out [32]byte
 	copy(out[:], keccak([]byte(marketID)))

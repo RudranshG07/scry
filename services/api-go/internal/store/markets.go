@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/RudranshG07/scry/services/api-go/internal/chain"
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
@@ -46,6 +47,7 @@ func readMarket(row pgx.CollectableRow) (domain.Market, error) {
 		return domain.Market{}, err
 	}
 
+	m.Key = chain.MarketKeyHex(m.ID)
 	m.OpensAt = stamp(opens)
 	m.LocksAt = stamp(locks)
 	m.ObservationStartsAt = stamp(starts)

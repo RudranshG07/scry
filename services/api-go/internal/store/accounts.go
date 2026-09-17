@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/RudranshG07/scry/services/api-go/internal/chain"
 	"github.com/RudranshG07/scry/services/api-go/internal/domain"
 )
 
@@ -60,6 +61,7 @@ func readPosition(row pgx.CollectableRow) (domain.Position, error) {
 	}
 
 	p.ID = fmt.Sprintf("%s:%d:%s", p.MarketID, p.ChainID, outcome)
+	p.Key = chain.MarketKeyHex(p.MarketID)
 	p.CreatedAt = stamp(at)
 	p.State = positionState(deployment, outcome, won, claimed, refunded)
 	switch {

@@ -24,7 +24,9 @@ type MarketOutcome struct {
 }
 
 type Market struct {
-	ID                  string          `json:"id"`
+	ID string `json:"id"`
+	// The id the book knows this market by, which is the hash of the one above.
+	Key                 string          `json:"key"`
 	StreamID            string          `json:"streamId"`
 	Category            string          `json:"category"`
 	Unit                string          `json:"unit"`
@@ -162,8 +164,11 @@ type ProofOfObservation struct {
 }
 
 type Position struct {
-	ID              string  `json:"id"`
-	MarketID        string  `json:"marketId"`
+	ID       string `json:"id"`
+	MarketID string `json:"marketId"`
+	// The id the book knows the market by, which is what a claim or a refund
+	// names. The site cannot hash it for itself.
+	Key             string  `json:"key"`
 	ChainID         int64   `json:"chainId"`
 	ContractAddress *string `json:"contractAddress,omitempty"`
 	Question        string  `json:"question"`
