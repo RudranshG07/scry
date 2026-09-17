@@ -13,8 +13,11 @@ const pol = { name: "POL", symbol: "POL", decimals: 18 };
 export const networks: readonly Network[] = [
   { chainId: 8453, name: "Base", testnet: false, rpcUrl: "https://mainnet.base.org", explorer: "https://basescan.org", currency: ether },
   { chainId: 137, name: "Polygon", testnet: false, rpcUrl: "https://polygon-rpc.com", explorer: "https://polygonscan.com", currency: pol },
-  { chainId: 84532, name: "Base Sepolia", testnet: true, rpcUrl: "https://sepolia.base.org", explorer: "https://sepolia.basescan.org", currency: ether },
-  { chainId: 80002, name: "Polygon Amoy", testnet: true, rpcUrl: "https://rpc-amoy.polygon.technology", explorer: "https://amoy.polygonscan.com", currency: pol },
+  // Not the official testnet endpoints: sepolia.base.org is load balanced and
+  // answers a wallet with a stale nonce after its own receipt, and
+  // rpc-amoy.polygon.technology does not always resolve.
+  { chainId: 84532, name: "Base Sepolia", testnet: true, rpcUrl: "https://base-sepolia-rpc.publicnode.com", explorer: "https://sepolia.basescan.org", currency: ether },
+  { chainId: 80002, name: "Polygon Amoy", testnet: true, rpcUrl: "https://polygon-amoy-bor-rpc.publicnode.com", explorer: "https://amoy.polygonscan.com", currency: pol },
   // Not 31337: that is every other anvil on a developer machine, and a wallet that
   // already knows it sends the deposit to whichever chain it met first.
   { chainId: 31338, name: "Scry local", testnet: true, rpcUrl: "http://127.0.0.1:8546", explorer: "", currency: ether },
