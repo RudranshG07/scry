@@ -62,7 +62,7 @@ type Worker struct {
 	signer    *chain.Signer
 	log       *slog.Logger
 	id        int64
-	factory   string
+	book      string
 	resolver  string
 	threshold int
 	span      uint64
@@ -75,7 +75,7 @@ func New(pool *pgxpool.Pool, log *slog.Logger, signer *chain.Signer, deployment 
 		signer:   signer,
 		log:      log.With("chain", deployment.ID),
 		id:       deployment.ID,
-		factory:  deployment.Factory,
+		book:     deployment.Book,
 		resolver: deployment.Resolver,
 		span:     maxSpan,
 	}
@@ -92,7 +92,7 @@ func (w *Worker) Check(ctx context.Context) error {
 	if id.Int64() != w.id {
 		return fmt.Errorf("SCRY_RPC_%d reaches chain %s", w.id, id)
 	}
-	for _, contract := range []string{w.factory, w.resolver} {
+	for _, contract := range []string{w.book, w.resolver} {
 		operator, err := w.addressAt(ctx, contract, chain.OperatorCall())
 		if err != nil {
 			return fmt.Errorf("read the operator of %s: %w", contract, err)
@@ -100,6 +100,13 @@ func (w *Worker) Check(ctx context.Context) error {
 		if !strings.EqualFold(operator, w.signer.Address) {
 			return fmt.Errorf("%s names %s as its operator, not %s", contract, operator, w.signer.Address)
 		}
+	}
+	wired, err := w.addressAt(ctx, w.resolver, chain.BookCall())
+	if err != nil {
+		return fmt.Errorf("read the resolver's book: %w", err)
+	}
+	if !strings.EqualFold(wired, w.book) {
+		return fmt.Errorf("the resolver settles %s, not %s", wired, w.book)
 	}
 	registry, err := w.addressAt(ctx, w.resolver, chain.ObserverRegistryCall())
 	if err != nil {
@@ -156,12 +163,12 @@ func (w *Worker) deploy(ctx context.Context) error {
 	}
 
 	key := chain.MarketKey(id)
-	existing, err := w.marketFor(ctx, key)
+	already, err := w.opened(ctx, key)
 	if err != nil {
 		return w.retry(ctx, id, err)
 	}
-	if existing != "" {
-		return w.created(ctx, id, existing, "", 0)
+	if already {
+		return w.created(ctx, id, w.book, "", 0)
 	}
 	if time.Until(locks) < lockMargin {
 		return w.settled(ctx, id, "Failed", "", "the market locked before it was deployed")
@@ -188,15 +195,11 @@ func (w *Worker) deploy(ctx context.Context) error {
 		MaximumDivergence:   maximumDivergence,
 	}, outcomes, nil)
 
-	hash, block, err := w.send(ctx, w.factory, data)
+	hash, block, err := w.send(ctx, w.book, data)
 	if err != nil {
 		return w.retry(ctx, id, err)
 	}
-	address, err := w.marketFor(ctx, key)
-	if err != nil || address == "" {
-		return w.retry(ctx, id, fmt.Errorf("created in %s but the factory does not list it yet: %v", hash, err))
-	}
-	return w.created(ctx, id, address, hash, block)
+	return w.created(ctx, id, w.book, hash, block)
 }
 
 func (w *Worker) outcomes(ctx context.Context, market string) ([]chain.Outcome, error) {
@@ -240,11 +243,11 @@ func (w *Worker) outcomes(ctx context.Context, market string) ([]chain.Outcome, 
 }
 
 func (w *Worker) propose(ctx context.Context) error {
-	var market, contract, winner, root, rule string
+	var market, winner, root, rule string
 	var value int64
 	var ends time.Time
 	err := w.pool.QueryRow(ctx, `
-		SELECT d.market_id, d.contract_address, m.observed_value, m.winning_outcome_id,
+		SELECT d.market_id, m.observed_value, m.winning_outcome_id,
 		       COALESCE(m.evidence_root, ''), m.rule_hash, m.observation_ends_at
 		FROM market_deployments d
 		JOIN markets m ON m.id = d.market_id
@@ -254,7 +257,7 @@ func (w *Worker) propose(ctx context.Context) error {
 		  AND (SELECT count(*) FROM result_attestations a
 		       WHERE a.market_id = d.market_id AND a.chain_id = d.chain_id) >= $2
 		ORDER BY m.observation_ends_at
-		LIMIT 1`, w.id, w.threshold).Scan(&market, &contract, &value, &winner, &root, &rule, &ends)
+		LIMIT 1`, w.id, w.threshold).Scan(&market, &value, &winner, &root, &rule, &ends)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -278,37 +281,32 @@ func (w *Worker) propose(ctx context.Context) error {
 		return w.retry(ctx, market, fmt.Errorf("%d of %d observers signed this result", len(signatures), w.threshold))
 	}
 
-	staked, err := w.number(ctx, contract, chain.TotalPoolCall())
+	key := chain.MarketKey(market)
+	staked, err := w.number(ctx, w.book, chain.TotalPoolCall(key))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
 	if staked.Sign() == 0 {
 		return w.settled(ctx, market, "Unfunded", "", "nobody took a position")
 	}
-	backing, err := w.number(ctx, contract, chain.PoolForCall(result.WinningOutcomeID))
+	backing, err := w.number(ctx, w.book, chain.PoolForCall(key, result.WinningOutcomeID))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
 	if backing.Sign() == 0 {
 		// Settling would void it anyway, with nothing staked on the winner to
 		// divide the pool against. Voiding now is one transaction, not two.
-		return w.voidOne(ctx, market, contract, "no winning stake")
+		return w.voidOne(ctx, market, "no winning stake")
 	}
 
-	data, err := chain.ProposeCall(contract, result, signatures)
-	if err != nil {
-		return w.retry(ctx, market, err)
-	}
-	hash, _, err := w.send(ctx, w.resolver, data)
+	hash, _, err := w.send(ctx, w.resolver, chain.ProposeCall(key, result, signatures))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
 
 	closes := time.Now().Add(fallbackChallenge)
-	if call, err := chain.ChallengeEndsAtCall(contract); err == nil {
-		if onChain, err := w.number(ctx, w.resolver, call); err == nil && onChain.Sign() > 0 {
-			closes = time.Unix(onChain.Int64(), 0)
-		}
+	if onChain, err := w.number(ctx, w.resolver, chain.ChallengeEndsAtCall(key)); err == nil && onChain.Sign() > 0 {
+		closes = time.Unix(onChain.Int64(), 0)
 	}
 	_, err = w.pool.Exec(ctx, `
 		UPDATE market_deployments
@@ -318,7 +316,7 @@ func (w *Worker) propose(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("record proposal for %s: %w", market, err)
 	}
-	w.log.Info("result proposed on chain", "market", market, "contract", contract, "tx", hash,
+	w.log.Info("result proposed on chain", "market", market, "tx", hash,
 		"challenge_ends", closes.UTC().Format(time.RFC3339))
 	return nil
 }
@@ -352,14 +350,14 @@ func (w *Worker) signatures(ctx context.Context, market string, digest [32]byte)
 }
 
 func (w *Worker) finalize(ctx context.Context) error {
-	var market, contract string
+	var market string
 	err := w.pool.QueryRow(ctx, `
-		SELECT d.market_id, d.contract_address
+		SELECT d.market_id
 		FROM market_deployments d
 		WHERE d.chain_id = $1 AND d.state = 'Proposed' AND `+due+`
 		  AND d.challenge_ends_at <= NOW() - INTERVAL '10 seconds'
 		ORDER BY d.challenge_ends_at
-		LIMIT 1`, w.id).Scan(&market, &contract)
+		LIMIT 1`, w.id).Scan(&market)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -367,11 +365,8 @@ func (w *Worker) finalize(ctx context.Context) error {
 		return fmt.Errorf("find proposals past their challenge window: %w", err)
 	}
 
-	call, err := chain.ObservationStatusCall(contract)
-	if err != nil {
-		return w.retry(ctx, market, err)
-	}
-	observation, err := w.number(ctx, w.resolver, call)
+	key := chain.MarketKey(market)
+	observation, err := w.number(ctx, w.resolver, chain.ObservationStatusCall(key))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
@@ -381,16 +376,12 @@ func (w *Worker) finalize(ctx context.Context) error {
 	case observationChallenged, observationInvalid:
 		return w.settled(ctx, market, "Voided", "", "voided on chain")
 	case observationProposed:
-		data, err := chain.FinalizeCall(contract)
-		if err != nil {
-			return w.retry(ctx, market, err)
-		}
-		if hash, _, err = w.send(ctx, w.resolver, data); err != nil {
+		if hash, _, err = w.send(ctx, w.resolver, chain.FinalizeCall(key)); err != nil {
 			return w.retry(ctx, market, err)
 		}
 	}
 
-	status, err := w.number(ctx, contract, chain.StatusCall())
+	status, err := w.number(ctx, w.book, chain.StatusCall(key))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
@@ -401,9 +392,9 @@ func (w *Worker) finalize(ctx context.Context) error {
 }
 
 func (w *Worker) void(ctx context.Context) error {
-	var market, contract, reason string
+	var market, reason string
 	err := w.pool.QueryRow(ctx, `
-		SELECT d.market_id, d.contract_address,
+		SELECT d.market_id,
 		       CASE WHEN m.status = 'Invalid' THEN 'observation invalid'
 		            WHEN m.status IN ('Result proposed', 'Resolved') THEN 'result not attested'
 		            ELSE 'never resolved' END
@@ -416,7 +407,7 @@ func (w *Worker) void(ctx context.Context) error {
 		       OR (d.state = 'Created' AND m.status IN ('Scheduled', 'Open', 'Locked', 'Observing')
 		           AND m.observation_ends_at < NOW() - $3::interval))
 		ORDER BY m.observation_ends_at
-		LIMIT 1`, w.id, unattested.String(), unresolved.String()).Scan(&market, &contract, &reason)
+		LIMIT 1`, w.id, unattested.String(), unresolved.String()).Scan(&market, &reason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -424,7 +415,8 @@ func (w *Worker) void(ctx context.Context) error {
 		return fmt.Errorf("find deployments to void: %w", err)
 	}
 
-	status, err := w.number(ctx, contract, chain.StatusCall())
+	key := chain.MarketKey(market)
+	status, err := w.number(ctx, w.book, chain.StatusCall(key))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
@@ -434,26 +426,22 @@ func (w *Worker) void(ctx context.Context) error {
 	case marketResolved:
 		return w.settled(ctx, market, "Finalized", "", "already resolved on chain")
 	}
-	staked, err := w.number(ctx, contract, chain.TotalPoolCall())
+	staked, err := w.number(ctx, w.book, chain.TotalPoolCall(key))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
 	if staked.Sign() == 0 {
 		return w.settled(ctx, market, "Unfunded", "", "nobody took a position")
 	}
-	return w.voidOne(ctx, market, contract, reason)
+	return w.voidOne(ctx, market, reason)
 }
 
-func (w *Worker) voidOne(ctx context.Context, market, contract, reason string) error {
+func (w *Worker) voidOne(ctx context.Context, market, reason string) error {
 	code, err := chain.Text32(reason)
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
-	data, err := chain.VoidCall(contract, code)
-	if err != nil {
-		return w.retry(ctx, market, err)
-	}
-	hash, _, err := w.send(ctx, w.resolver, data)
+	hash, _, err := w.send(ctx, w.resolver, chain.VoidCall(chain.MarketKey(market), code))
 	if err != nil {
 		return w.retry(ctx, market, err)
 	}
@@ -532,13 +520,16 @@ func (w *Worker) addressAt(ctx context.Context, to string, data []byte) (string,
 	return chain.AddressFromWord(raw)
 }
 
-func (w *Worker) marketFor(ctx context.Context, key [32]byte) (string, error) {
-	address, err := w.addressAt(ctx, w.factory, chain.MarketForCall(key))
+// opened says whether the book already holds this market: one that nobody has
+// opened has no rule hash.
+func (w *Worker) opened(ctx context.Context, key [32]byte) (bool, error) {
+	raw, err := w.client.Call(ctx, w.book, chain.RuleHashCall(key))
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	if strings.Trim(strings.TrimPrefix(address, "0x"), "0") == "" {
-		return "", nil
+	rule, err := chain.Uint(raw)
+	if err != nil {
+		return false, err
 	}
-	return address, nil
+	return rule.Sign() != 0, nil
 }

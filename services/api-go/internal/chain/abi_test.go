@@ -65,9 +65,9 @@ func TestCreateMarketCalldataMatchesFoundry(t *testing.T) {
 }
 
 func TestProposeCalldataMatchesFoundry(t *testing.T) {
-	market := "0x1111111111111111111111111111111111111111"
+	key := MarketKey("market-1")
 	result := Result{
-		MarketID:         MarketKey("market-1"),
+		MarketID:         key,
 		ObservedValue:    big.NewInt(164),
 		WinningOutcomeID: outcomeID(t, "yes"),
 		EvidenceRoot:     MarketKey("evidence"),
@@ -76,13 +76,10 @@ func TestProposeCalldataMatchesFoundry(t *testing.T) {
 	}
 	first, second := bytes.Repeat([]byte{0xaa}, 65), bytes.Repeat([]byte{0xbb}, 65)
 
-	data, err := ProposeCall(market, result, [][]byte{first, second})
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := ProposeCall(key, result, [][]byte{first, second})
 	want := foundryCalldata(t,
-		"propose(address,(bytes32,uint256,bytes32,bytes32,bytes32,uint64,bool),bytes[])",
-		market,
+		"propose(bytes32,(bytes32,uint256,bytes32,bytes32,bytes32,uint64,bool),bytes[])",
+		fmt.Sprintf("0x%x", key),
 		fmt.Sprintf("(0x%x,164,0x%x,0x%x,0x%x,1789422312,false)",
 			result.MarketID, result.WinningOutcomeID, result.EvidenceRoot, result.RuleHash),
 		fmt.Sprintf("[0x%x,0x%x]", first, second),
@@ -93,24 +90,28 @@ func TestProposeCalldataMatchesFoundry(t *testing.T) {
 }
 
 func TestSettlementCallsMatchFoundry(t *testing.T) {
-	market := "0x2222222222222222222222222222222222222222"
+	key := MarketKey("market-1")
+	id := fmt.Sprintf("0x%x", key)
 	reason := outcomeID(t, "observers disagreed")
 
-	finalize, err := FinalizeCall(market)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := "0x"+hex.EncodeToString(finalize), foundryCalldata(t, "finalize(address)", market); got != want {
-		t.Fatalf("finalize got %s want %s", got, want)
+	finalize := "0x" + hex.EncodeToString(FinalizeCall(key))
+	if want := foundryCalldata(t, "finalize(bytes32)", id); finalize != want {
+		t.Fatalf("finalize got %s want %s", finalize, want)
 	}
 
-	void, err := VoidCall(market, reason)
-	if err != nil {
-		t.Fatal(err)
+	void := "0x" + hex.EncodeToString(VoidCall(key, reason))
+	if want := foundryCalldata(t, "invalidate(bytes32,bytes32)", id, fmt.Sprintf("0x%x", reason)); void != want {
+		t.Fatalf("invalidate got %s want %s", void, want)
 	}
-	want := foundryCalldata(t, "invalidate(address,bytes32)", market, fmt.Sprintf("0x%x", reason))
-	if got := "0x" + hex.EncodeToString(void); got != want {
-		t.Fatalf("invalidate got %s want %s", got, want)
+
+	pool := "0x" + hex.EncodeToString(PoolForCall(key, outcomeID(t, "yes")))
+	if want := foundryCalldata(t, "poolFor(bytes32,bytes32)", id, fmt.Sprintf("0x%x", outcomeID(t, "yes"))); pool != want {
+		t.Fatalf("poolFor got %s want %s", pool, want)
+	}
+
+	total := "0x" + hex.EncodeToString(TotalPoolCall(key))
+	if want := foundryCalldata(t, "totalPool(bytes32)", id); total != want {
+		t.Fatalf("totalPool got %s want %s", total, want)
 	}
 }
 

@@ -2,6 +2,7 @@ package onchain
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,14 +18,13 @@ import (
 
 const (
 	maxSpan       = 2000
-	addressBatch  = 100
 	indexInterval = 10 * time.Second
 )
 
 var (
-	depositedTopic = chain.EventTopic("PositionDeposited(address,bytes32,uint256)")
-	claimedTopic   = chain.EventTopic("Claimed(address,uint256)")
-	refundedTopic  = chain.EventTopic("Refunded(address,uint256)")
+	depositedTopic = chain.EventTopic("PositionDeposited(bytes32,address,bytes32,uint256)")
+	claimedTopic   = chain.EventTopic("Claimed(bytes32,address,uint256)")
+	refundedTopic  = chain.EventTopic("Refunded(bytes32,address,uint256)")
 )
 
 // Blocks the index stays behind the head, so a position it records is not then
@@ -80,27 +80,19 @@ func (w *Worker) index(ctx context.Context) error {
 	from := uint64(done) + 1
 	to := min(head-depth, from+w.span-1)
 
-	contracts, err := w.contracts(ctx)
+	// Every market is in the one book, so this is one query over one address
+	// however many markets are running.
+	markets, err := w.markets(ctx)
 	if err != nil {
 		return err
 	}
-	addresses := make([]string, 0, len(contracts))
-	for address := range contracts {
-		addresses = append(addresses, address)
-	}
-	sort.Strings(addresses)
-
-	var logs []chain.Log
-	for start := 0; start < len(addresses); start += addressBatch {
-		batch := addresses[start:min(start+addressBatch, len(addresses))]
-		found, err := w.client.Logs(ctx, from, to, batch, []string{depositedTopic, claimedTopic, refundedTopic})
-		if err != nil {
-			// Public endpoints cap how many blocks one query may cover and say
-			// so each in their own words. Asking for fewer answers all of them.
-			w.span = max(1, w.span/2)
-			return fmt.Errorf("logs %d to %d: %w", from, to, err)
-		}
-		logs = append(logs, found...)
+	logs, err := w.client.Logs(ctx, from, to, []string{w.book},
+		[]string{depositedTopic, claimedTopic, refundedTopic})
+	if err != nil {
+		// Public endpoints cap how many blocks one query may cover and say so
+		// each in their own words. Asking for fewer answers all of them.
+		w.span = max(1, w.span/2)
+		return fmt.Errorf("logs %d to %d: %w", from, to, err)
 	}
 	sort.Slice(logs, func(i, j int) bool {
 		if logs[i].BlockNumber != logs[j].BlockNumber {
@@ -112,7 +104,10 @@ func (w *Worker) index(ctx context.Context) error {
 		if entry.Removed {
 			continue
 		}
-		if err := w.record(ctx, contracts[strings.ToLower(entry.Address)], entry); err != nil {
+		if len(entry.Topics) < 2 {
+			continue
+		}
+		if err := w.record(ctx, markets[strings.ToLower(entry.Topics[1])], entry); err != nil {
 			return err
 		}
 	}
@@ -129,37 +124,39 @@ func (w *Worker) index(ctx context.Context) error {
 	return nil
 }
 
-// Contracts that can still emit anything worth recording: deposits until they
-// lock, then claims and refunds for as long as anyone is likely to make one.
-func (w *Worker) contracts(ctx context.Context) (map[string]string, error) {
+// The markets that can still emit anything worth recording, by the id the book
+// knows them under: deposits until they lock, then claims and refunds for as
+// long as anyone is likely to make one.
+func (w *Worker) markets(ctx context.Context) (map[string]string, error) {
 	rows, err := w.pool.Query(ctx, `
-		SELECT lower(d.contract_address), d.market_id
+		SELECT d.market_id
 		FROM market_deployments d
 		JOIN markets m ON m.id = d.market_id
-		WHERE d.chain_id = $1 AND d.contract_address IS NOT NULL
+		WHERE d.chain_id = $1
 		  AND d.state IN ('Created', 'Proposed', 'Finalized', 'Voided')
 		  AND m.observation_ends_at > NOW() - INTERVAL '30 days'`, w.id)
 	if err != nil {
-		return nil, fmt.Errorf("list contracts: %w", err)
+		return nil, fmt.Errorf("list markets: %w", err)
 	}
 	defer rows.Close()
 
 	out := map[string]string{}
 	for rows.Next() {
-		var address, market string
-		if err := rows.Scan(&address, &market); err != nil {
+		var market string
+		if err := rows.Scan(&market); err != nil {
 			return nil, err
 		}
-		out[address] = market
+		key := chain.MarketKey(market)
+		out["0x"+hex.EncodeToString(key[:])] = market
 	}
 	return out, rows.Err()
 }
 
 func (w *Worker) record(ctx context.Context, market string, entry chain.Log) error {
-	if market == "" || len(entry.Topics) < 2 || len(entry.Data) < 32 {
+	if market == "" || len(entry.Topics) < 3 || len(entry.Data) < 32 {
 		return nil
 	}
-	subject, err := chain.Bytes32(entry.Topics[1])
+	subject, err := chain.Bytes32(entry.Topics[2])
 	if err != nil {
 		return fmt.Errorf("log account: %w", err)
 	}
@@ -175,10 +172,10 @@ func (w *Worker) record(ctx context.Context, market string, entry chain.Log) err
 	var kind string
 	switch entry.Topics[0] {
 	case depositedTopic:
-		if len(entry.Topics) < 3 {
+		if len(entry.Topics) < 4 {
 			return nil
 		}
-		outcome, err := chain.Bytes32(entry.Topics[2])
+		outcome, err := chain.Bytes32(entry.Topics[3])
 		if err != nil {
 			return fmt.Errorf("log outcome: %w", err)
 		}

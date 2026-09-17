@@ -9,7 +9,7 @@ import (
 type Chain struct {
 	ID       int64
 	RPC      string
-	Factory  string
+	Book     string
 	Resolver string
 }
 
@@ -34,7 +34,7 @@ func Load() Config {
 }
 
 // Chains lists where markets take positions: SCRY_CHAINS=84532,80002 and, for
-// each, SCRY_RPC_<id>, SCRY_FACTORY_<id> and SCRY_RESOLVER_<id>.
+// each, SCRY_RPC_<id>, SCRY_BOOK_<id> and SCRY_RESOLVER_<id>.
 func Chains() []Chain {
 	var out []Chain
 	for _, part := range strings.Split(os.Getenv("SCRY_CHAINS"), ",") {
@@ -46,7 +46,7 @@ func Chains() []Chain {
 		out = append(out, Chain{
 			ID:       id,
 			RPC:      strings.TrimSpace(os.Getenv("SCRY_RPC_" + suffix)),
-			Factory:  strings.TrimSpace(os.Getenv("SCRY_FACTORY_" + suffix)),
+			Book:     strings.TrimSpace(os.Getenv("SCRY_BOOK_" + suffix)),
 			Resolver: strings.TrimSpace(os.Getenv("SCRY_RESOLVER_" + suffix)),
 		})
 	}

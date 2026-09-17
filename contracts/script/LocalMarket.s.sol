@@ -1,7 +1,6 @@
 pragma solidity 0.8.30;
 
-import {MarketFactory} from "../src/MarketFactory.sol";
-import {PooledMarket} from "../src/PooledMarket.sol";
+import {MarketBook} from "../src/MarketBook.sol";
 import {ScryTypes} from "../src/ScryTypes.sol";
 import {DevUSDC} from "../src/DevUSDC.sol";
 
@@ -11,18 +10,19 @@ interface VmLike {
     function stopBroadcast() external;
 }
 
-/// @notice Opens one market on a local chain and takes a position on it, so the
+/// @notice Opens one market on a local chain and takes both sides of it, so the
 /// deposit path is exercised against a real chain rather than described.
 contract LocalMarket {
     VmLike constant vm = VmLike(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
-    function run() external returns (address market, uint256 yesPool, uint256 noPool) {
-        MarketFactory factory = MarketFactory(vm.envAddress("SCRY_FACTORY"));
-        DevUSDC usdc = DevUSDC(factory.collateral());
+    function run() external returns (bytes32 marketId, uint256 yesPool, uint256 noPool) {
+        MarketBook book = MarketBook(vm.envAddress("SCRY_BOOK"));
+        DevUSDC usdc = DevUSDC(book.collateral());
 
+        marketId = "local-1";
         ScryTypes.MarketRule memory rule = ScryTypes.MarketRule({
-            marketId: keccak256("local-1"),
-            streamId: keccak256("stream-local"),
+            marketId: marketId,
+            streamId: "stream-local",
             ruleHash: keccak256("rule-1"),
             opensAt: uint64(block.timestamp + 1),
             locksAt: uint64(block.timestamp + 600),
@@ -35,28 +35,29 @@ contract LocalMarket {
 
         ScryTypes.Outcome[] memory outcomes = new ScryTypes.Outcome[](2);
         outcomes[0] = ScryTypes.Outcome({
-            id: keccak256("yes"), label: "Yes, above 400",
+            id: "yes", label: "Yes, above 400",
             minimum: 401, maximum: 0, hasMinimum: true, hasMaximum: false
         });
         outcomes[1] = ScryTypes.Outcome({
-            id: keccak256("no"), label: "No, 400 or below",
+            id: "no", label: "No, 400 or below",
             minimum: 0, maximum: 400, hasMinimum: false, hasMaximum: true
         });
 
         vm.startBroadcast();
 
-        market = factory.createMarket(rule, outcomes, 0);
+        book.createMarket(rule, outcomes, 0);
 
-        // 60 USDC on yes, 40 on no: one wallet, inside the default 100 USDC stake
-        // limit. Six decimals, as USDC has everywhere.
+        // 60 USDC on yes, 40 on no: one wallet, inside the default 100 USDC
+        // stake limit, and one approval covering both, which is what the book is
+        // for. Six decimals, as USDC has everywhere.
         usdc.mint(msg.sender, 100_000_000);
-        usdc.approve(market, type(uint256).max);
-        PooledMarket(market).deposit(keccak256("yes"), 60_000_000);
-        PooledMarket(market).deposit(keccak256("no"), 40_000_000);
+        usdc.approve(address(book), 100_000_000);
+        book.deposit(marketId, "yes", 60_000_000);
+        book.deposit(marketId, "no", 40_000_000);
 
         vm.stopBroadcast();
 
-        yesPool = PooledMarket(market).poolFor(keccak256("yes"));
-        noPool = PooledMarket(market).poolFor(keccak256("no"));
+        yesPool = book.poolFor(marketId, "yes");
+        noPool = book.poolFor(marketId, "no");
     }
 }

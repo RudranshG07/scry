@@ -1,20 +1,21 @@
 pragma solidity 0.8.30;
 
+import {IMarketBook} from "./interfaces/IMarketBook.sol";
 import {IObservationResolver} from "./interfaces/IObservationResolver.sol";
 import {IObserverRegistry} from "./interfaces/IObserverRegistry.sol";
-import {IPooledMarket} from "./interfaces/IPooledMarket.sol";
 import {ScryTypes} from "./ScryTypes.sol";
 
 /// @notice Carries a result from the observers to the market it settles.
 ///
 /// A proposal needs enough signatures from distinct registered observers over
-/// the exact result, and the result must name the market and its rule hash, so a
-/// valid reading of one market cannot be replayed against another. The signed digest
-/// is EIP-712 and names this chain and this resolver, so a reading signed for a
-/// testnet deployment cannot be replayed against mainnet either.
+/// the exact result, and the result must name the market and the rule hash the
+/// book holds for it, so a valid reading of one market cannot be replayed
+/// against another. The signed digest is EIP-712 and names this chain and this
+/// resolver, so a reading signed for a testnet deployment cannot be replayed
+/// against mainnet either.
 ///
 /// Only the admin or the operator can challenge or void. An open challenge that
-/// voids the market for the price of gas is one every losing position would file,
+/// voids a market for the price of gas is one every losing position would file,
 /// and no market would ever pay out. Voiding only ever refunds stakes, so the
 /// operator's hot key can hold it; registering observers stays with the admin.
 contract ObservationResolver is IObservationResolver {
@@ -23,7 +24,14 @@ contract ObservationResolver is IObservationResolver {
     address public immutable observerRegistry;
     uint64 public immutable challengeWindow;
 
+    /// @dev The book is deployed after this, because it is constructed with the
+    /// resolver's address. Whoever deployed this wires the two together once,
+    /// and neither can be pointed anywhere else afterwards.
+    address public book;
+    address private immutable wiring;
+
     event OperatorChanged(address indexed previous, address indexed next);
+    event BookSet(address indexed book);
 
     struct Proposal {
         bytes32 evidenceRoot;
@@ -34,7 +42,7 @@ contract ObservationResolver is IObservationResolver {
         bool exists;
     }
 
-    mapping(address => Proposal) private _proposals;
+    mapping(bytes32 => Proposal) private _proposals;
 
     bytes32 private constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -46,12 +54,13 @@ contract ObservationResolver is IObservationResolver {
     );
 
     /// @dev Upper bound of the lower half of the secp256k1 curve order.
-    uint256 private constant HALF_ORDER =
-        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
+    uint256 private constant HALF_ORDER = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
     error InvalidConfiguration();
     error NotAdmin();
     error NotOperator();
+    error BookAlreadySet();
+    error NoBook();
     error AlreadyProposed();
     error MarketMismatch();
     error RuleMismatch();
@@ -74,11 +83,20 @@ contract ObservationResolver is IObservationResolver {
         operator = operator_;
         observerRegistry = observerRegistry_;
         challengeWindow = challengeWindow_;
+        wiring = msg.sender;
     }
 
     modifier onlyOperator() {
         if (msg.sender != operator && msg.sender != admin) revert NotOperator();
         _;
+    }
+
+    function setBook(address next) external {
+        if (msg.sender != wiring && msg.sender != admin) revert NotAdmin();
+        if (book != address(0)) revert BookAlreadySet();
+        if (next == address(0)) revert InvalidConfiguration();
+        book = next;
+        emit BookSet(next);
     }
 
     function setOperator(address next) external {
@@ -88,21 +106,19 @@ contract ObservationResolver is IObservationResolver {
         operator = next;
     }
 
-    function propose(address market, ScryTypes.ObservationResult calldata result, bytes[] calldata signatures)
+    function propose(bytes32 marketId, ScryTypes.ObservationResult calldata result, bytes[] calldata signatures)
         external
         override
     {
-        if (_proposals[market].exists) revert AlreadyProposed();
+        if (book == address(0)) revert NoBook();
+        if (_proposals[marketId].exists) revert AlreadyProposed();
         if (result.invalid) revert ResultMarkedInvalid();
-        // Rule hashes are unique only because the API happens to hash the market id
-        // into them. The id is checked here so that stays true on chain whatever
-        // the API does.
-        if (result.marketId != IPooledMarket(market).marketId()) revert MarketMismatch();
-        if (result.ruleHash != IPooledMarket(market).ruleHash()) revert RuleMismatch();
+        if (result.marketId != marketId) revert MarketMismatch();
+        if (result.ruleHash != IMarketBook(book).ruleHash(marketId)) revert RuleMismatch();
 
         _verify(result, signatures);
 
-        _proposals[market] = Proposal({
+        _proposals[marketId] = Proposal({
             evidenceRoot: result.evidenceRoot,
             winningOutcomeId: result.winningOutcomeId,
             observedValue: result.observedValue,
@@ -111,47 +127,48 @@ contract ObservationResolver is IObservationResolver {
             exists: true
         });
 
-        emit ObservationProposed(market, result.evidenceRoot, result.observedValue, result.winningOutcomeId);
+        emit ObservationProposed(marketId, result.evidenceRoot, result.observedValue, result.winningOutcomeId);
     }
 
-    function challenge(address market, bytes32 reason) external override onlyOperator {
-        Proposal storage p = _proposals[market];
+    function challenge(bytes32 marketId, bytes32 reason) external override onlyOperator {
+        Proposal storage p = _proposals[marketId];
         if (p.status != ScryTypes.ObservationStatus.Proposed) revert WrongStatus();
         if (block.timestamp >= p.challengeEndsAt) revert ChallengeClosed();
 
         p.status = ScryTypes.ObservationStatus.Challenged;
-        emit ObservationChallenged(market, msg.sender, reason);
+        emit ObservationChallenged(marketId, msg.sender, reason);
 
-        IPooledMarket(market).invalidate(reason);
-        emit ObservationInvalidated(market, reason);
+        IMarketBook(book).invalidate(marketId, reason);
+        emit ObservationInvalidated(marketId, reason);
     }
 
-    function finalize(address market) external override {
-        Proposal storage p = _proposals[market];
+    function finalize(bytes32 marketId) external override {
+        Proposal storage p = _proposals[marketId];
         if (p.status != ScryTypes.ObservationStatus.Proposed) revert WrongStatus();
         if (block.timestamp < p.challengeEndsAt) revert ChallengeOpen();
 
         p.status = ScryTypes.ObservationStatus.Final;
-        IPooledMarket(market).resolve(p.winningOutcomeId, p.observedValue, p.evidenceRoot);
-        emit ObservationFinalized(market, p.evidenceRoot);
+        IMarketBook(book).resolve(marketId, p.winningOutcomeId, p.observedValue, p.evidenceRoot);
+        emit ObservationFinalized(marketId, p.evidenceRoot);
     }
 
-    function invalidate(address market, bytes32 reason) external override onlyOperator {
-        Proposal storage p = _proposals[market];
+    function invalidate(bytes32 marketId, bytes32 reason) external override onlyOperator {
+        if (book == address(0)) revert NoBook();
+        Proposal storage p = _proposals[marketId];
         if (p.status == ScryTypes.ObservationStatus.Final) revert WrongStatus();
 
         p.status = ScryTypes.ObservationStatus.Invalid;
         p.exists = true;
-        IPooledMarket(market).invalidate(reason);
-        emit ObservationInvalidated(market, reason);
+        IMarketBook(book).invalidate(marketId, reason);
+        emit ObservationInvalidated(marketId, reason);
     }
 
-    function observationStatus(address market) external view override returns (ScryTypes.ObservationStatus) {
-        return _proposals[market].status;
+    function observationStatus(bytes32 marketId) external view override returns (ScryTypes.ObservationStatus) {
+        return _proposals[marketId].status;
     }
 
-    function challengeEndsAt(address market) external view override returns (uint64) {
-        return _proposals[market].challengeEndsAt;
+    function challengeEndsAt(bytes32 marketId) external view override returns (uint64) {
+        return _proposals[marketId].challengeEndsAt;
     }
 
     function domainSeparator() public view returns (bytes32) {

@@ -1,6 +1,6 @@
 pragma solidity 0.8.30;
 
-import {MarketFactory} from "../src/MarketFactory.sol";
+import {MarketBook} from "../src/MarketBook.sol";
 import {ObservationResolver} from "../src/ObservationResolver.sol";
 import {ObserverRegistry} from "../src/ObserverRegistry.sol";
 import {ReputationCheckpoint} from "../src/ReputationCheckpoint.sol";
@@ -21,7 +21,7 @@ interface VmLike {
 ///
 /// SCRY_ADMIN should be a Safe. It alone registers observers, and whoever
 /// registers observers can settle every market. SCRY_OPERATOR is the server's
-/// hot key: it creates markets and can void or pause them, none of which moves
+/// hot key: it opens markets and can void or pause them, none of which moves
 /// money anywhere but back to the people who staked it.
 contract Deploy {
     VmLike constant vm = VmLike(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -32,7 +32,11 @@ contract Deploy {
     uint256 constant POLYGON_AMOY = 80002;
     uint256 constant ANVIL = 31337;
 
-    // Polygon runs two USDCs; Polymarket settles in the bridged USDC.e.
+    // Polygon runs two USDCs. Scry settles in Circle's native one, which is what
+    // an exchange sends when somebody withdraws USDC to Polygon. The bridged
+    // USDC.e below is a different contract, the one Polymarket settles in, and
+    // money sent to the wrong one never appears. SCRY_COLLATERAL overrides this.
+    address constant POLYGON_USDC = 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359;
     address constant POLYGON_USDC_E = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
     address constant BASE_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address constant BASE_SEPOLIA_USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
@@ -49,7 +53,7 @@ contract Deploy {
 
     function knownCollateral(uint256 chainId) public pure returns (address) {
         if (chainId == BASE) return BASE_USDC;
-        if (chainId == POLYGON) return POLYGON_USDC_E;
+        if (chainId == POLYGON) return POLYGON_USDC;
         if (chainId == BASE_SEPOLIA) return BASE_SEPOLIA_USDC;
         if (chainId == POLYGON_AMOY) return POLYGON_AMOY_USDC;
         revert UnsupportedChain(chainId);
@@ -60,7 +64,7 @@ contract Deploy {
         returns (
             ObserverRegistry registry,
             ObservationResolver resolver,
-            MarketFactory factory,
+            MarketBook book,
             ReputationCheckpoint reputation
         )
     {
@@ -71,22 +75,24 @@ contract Deploy {
         // Six decimals. Low on purpose until the contracts have been audited.
         uint256 maxPool = vm.envOr("SCRY_MAX_POOL", uint256(1_000e6));
         uint256 maxStake = vm.envOr("SCRY_MAX_STAKE", uint256(100e6));
-        // Polygon has two USDCs: bridged USDC.e, which Polymarket settles in, and
-        // Circle's native USDC (0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359), which
-        // exchanges withdraw. A deployment accepts only the one it was given.
         address named = vm.envOr("SCRY_COLLATERAL", address(0));
 
         vm.startBroadcast();
 
         // Inside the broadcast, not before it. Creating the token above only
-        // computed an address in simulation: nothing was deployed, and the
-        // factory happily stored a collateral that was not a contract. The
-        // first deposit reverted on a call to nothing.
+        // computed an address in simulation: nothing was deployed, and the book
+        // happily stored a collateral that was not a contract. The first deposit
+        // reverted on a call to nothing.
         address collateral = named == address(0) ? collateralFor(block.chainid) : named;
 
         registry = new ObserverRegistry(admin, threshold);
         resolver = new ObservationResolver(admin, operator, address(registry), challengeWindow);
-        factory = new MarketFactory(admin, operator, collateral, address(resolver), maxPool, maxStake);
+        book = new MarketBook(admin, operator, collateral, address(resolver), maxPool, maxStake);
+        // The resolver comes first because the book is constructed with its
+        // address, so this is the one call that ties the two together. It can be
+        // made once, by whoever deployed the resolver, and neither contract can
+        // be pointed anywhere else afterwards.
+        resolver.setBook(address(book));
         reputation = new ReputationCheckpoint(admin);
 
         vm.stopBroadcast();

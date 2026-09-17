@@ -109,52 +109,62 @@ func CreateMarketCall(rule Rule, outcomes []Outcome, sponsorReward *big.Int) []b
 	return append(selector("createMarket((bytes32,bytes32,bytes32,uint64,uint64,uint64,uint64,uint16,uint32,uint64),(bytes32,string,uint256,uint256,bool,bool)[],uint256)"), args...)
 }
 
-func ProposeCall(market string, result Result, signatures [][]byte) ([]byte, error) {
-	address, err := wordOfAddress(market)
-	if err != nil {
-		return nil, err
-	}
+// Every call names its market by id. One book holds them all, so there is no
+// per-market address to look up and nothing to get wrong about which contract a
+// result is being carried to.
+func ProposeCall(marketID [32]byte, result Result, signatures [][]byte) []byte {
 	elements := make([][]byte, len(signatures))
 	for i, signature := range signatures {
 		elements[i] = concat(wordOfUint(uint64(len(signature))), padRight(signature))
 	}
 	args := concat(
-		address,
+		marketID[:],
 		result.MarketID[:], wordOfInt(orZero(result.ObservedValue)), result.WinningOutcomeID[:],
 		result.EvidenceRoot[:], result.RuleHash[:], wordOfUint(result.ObservedAt), wordOfBool(false),
 		wordOfUint(9*32),
 	)
 	args = append(args, dynamicArray(elements)...)
-	return append(selector("propose(address,(bytes32,uint256,bytes32,bytes32,bytes32,uint64,bool),bytes[])"), args...), nil
+	return append(selector("propose(bytes32,(bytes32,uint256,bytes32,bytes32,bytes32,uint64,bool),bytes[])"), args...)
 }
 
-func FinalizeCall(market string) ([]byte, error) { return addressCall("finalize(address)", market) }
-
-func VoidCall(market string, reason [32]byte) ([]byte, error) {
-	data, err := addressCall("invalidate(address,bytes32)", market)
-	if err != nil {
-		return nil, err
-	}
-	return append(data, reason[:]...), nil
+func FinalizeCall(marketID [32]byte) []byte {
+	return append(selector("finalize(bytes32)"), marketID[:]...)
 }
 
-func ChallengeEndsAtCall(market string) ([]byte, error) {
-	return addressCall("challengeEndsAt(address)", market)
+func VoidCall(marketID, reason [32]byte) []byte {
+	return concat(selector("invalidate(bytes32,bytes32)"), marketID[:], reason[:])
 }
 
-func ObservationStatusCall(market string) ([]byte, error) {
-	return addressCall("observationStatus(address)", market)
+func ChallengeEndsAtCall(marketID [32]byte) []byte {
+	return append(selector("challengeEndsAt(bytes32)"), marketID[:]...)
 }
 
-func TotalPoolCall() []byte          { return selector("totalPool()") }
-func StatusCall() []byte             { return selector("status()") }
+func ObservationStatusCall(marketID [32]byte) []byte {
+	return append(selector("observationStatus(bytes32)"), marketID[:]...)
+}
+
+func StatusCall(marketID [32]byte) []byte {
+	return append(selector("status(bytes32)"), marketID[:]...)
+}
+
+func TotalPoolCall(marketID [32]byte) []byte {
+	return append(selector("totalPool(bytes32)"), marketID[:]...)
+}
+
+// RuleHashCall says whether the book holds this market at all: a market nobody
+// has opened has no rule.
+func RuleHashCall(marketID [32]byte) []byte {
+	return append(selector("ruleHash(bytes32)"), marketID[:]...)
+}
+
+func PoolForCall(marketID, outcomeID [32]byte) []byte {
+	return concat(selector("poolFor(bytes32,bytes32)"), marketID[:], outcomeID[:])
+}
+
 func OperatorCall() []byte           { return selector("operator()") }
 func ObserverRegistryCall() []byte   { return selector("observerRegistry()") }
 func SignatureThresholdCall() []byte { return selector("signatureThreshold()") }
-
-func PoolForCall(outcomeID [32]byte) []byte {
-	return append(selector("poolFor(bytes32)"), outcomeID[:]...)
-}
+func BookCall() []byte               { return selector("book()") }
 
 func EventTopic(signature string) string { return "0x" + hexOf(keccak([]byte(signature))) }
 
@@ -178,14 +188,6 @@ func ResultDigest(chainID *big.Int, resolver string, result Result) ([32]byte, e
 		result.WinningOutcomeID[:], result.EvidenceRoot[:], result.RuleHash[:], wordOfUint(result.ObservedAt))
 	copy(out[:], keccak([]byte{0x19, 0x01}, domain, structHash))
 	return out, nil
-}
-
-func addressCall(signature, address string) ([]byte, error) {
-	word, err := wordOfAddress(address)
-	if err != nil {
-		return nil, err
-	}
-	return append(selector(signature), word...), nil
 }
 
 func dynamicArray(elements [][]byte) []byte {

@@ -74,22 +74,6 @@ func Bytes32(text string) ([32]byte, error) {
 	return out, nil
 }
 
-func ResolveCall(outcomeID [32]byte, value *big.Int, root [32]byte) []byte {
-	data := selector("resolve(bytes32,uint256,bytes32)")
-	data = append(data, outcomeID[:]...)
-	data = append(data, wordOfInt(value)...)
-	data = append(data, root[:]...)
-	return data
-}
-
-func InvalidateCall(reason [32]byte) []byte {
-	return append(selector("invalidate(bytes32)"), reason[:]...)
-}
-
-func MarketForCall(marketID [32]byte) []byte {
-	return append(selector("marketFor(bytes32)"), marketID[:]...)
-}
-
 func AddressFromWord(raw []byte) (string, error) {
 	if len(raw) < 32 {
 		return "", fmt.Errorf("want 32 bytes, got %d", len(raw))

@@ -40,7 +40,7 @@ func (server *Server) getChains(writer http.ResponseWriter, _ *http.Request) {
 	for _, deployment := range server.chains {
 		out = append(out, map[string]any{
 			"chainId":  deployment.ID,
-			"factory":  chain.Checksum(deployment.Factory),
+			"book":     chain.Checksum(deployment.Book),
 			"resolver": chain.Checksum(deployment.Resolver),
 		})
 	}
