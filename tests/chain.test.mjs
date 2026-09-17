@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { approveIfNeeded, collateralOf, describeRevert, toSignableHex, waitForReceipt } from "../src/lib/chain.ts";
+import { approvalCovers, approveIfNeeded, claim, collateralOf, deposit, describeRevert, toSignableHex, waitForReceipt } from "../src/lib/chain.ts";
+
+const book = "0x000000000000000000000000000000000000dEaD";
+const market = `0x${"ab".repeat(32)}`;
+const trader = "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf";
+const usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 function stubProvider(calls, { allowance = 0n, call, receipts = [] } = {}) {
   return {
@@ -15,44 +20,60 @@ function stubProvider(calls, { allowance = 0n, call, receipts = [] } = {}) {
   };
 }
 
-test("the token is read from the market, not from a list kept here", async () => {
+test("the token is read from the book, not from a list kept here", async () => {
   const calls = [];
   const token = await collateralOf(
     stubProvider(calls, { call: `0x${"0".repeat(24)}833589fcd6edb6e08f4c7c32d4f71b54bda02913` }),
-    "0x000000000000000000000000000000000000dEaD",
+    book,
   );
   assert.equal(token, "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
-  assert.equal(calls[0].params[0].to, "0x000000000000000000000000000000000000dEaD");
+  assert.equal(calls[0].params[0].to, book);
   assert.equal(calls[0].params[0].data, "0xd8dfeb45");
 });
 
-test("approval is skipped when the allowance already covers the deposit", async () => {
+test("a standing allowance is never asked for again", async () => {
   const calls = [];
-  const hash = await approveIfNeeded(
-    stubProvider(calls, { allowance: 100n }),
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf",
-    "0x000000000000000000000000000000000000dEaD",
-    50n,
-  );
+  const hash = await approveIfNeeded(stubProvider(calls, { allowance: 100n }), usdc, trader, book, 50n);
   assert.equal(hash, null);
-  assert.equal(calls.filter((c) => c.method === "eth_sendTransaction").length, 0);
+  assert.equal(calls.filter((entry) => entry.method === "eth_sendTransaction").length, 0);
 });
 
-test("approval covers exactly the deposit, never an unlimited allowance", async () => {
+test("one approval covers a run of positions, not only this one", async () => {
   const calls = [];
-  await approveIfNeeded(
-    stubProvider(calls, { allowance: 0n }),
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf",
-    "0x000000000000000000000000000000000000dEaD",
-    50n,
-  );
-  const sent = calls.find((c) => c.method === "eth_sendTransaction");
-  // An unlimited approval would let the market move the whole balance long
-  // after it has settled.
-  assert.ok(sent.params[0].data.endsWith((50n).toString(16).padStart(64, "0")));
+  await approveIfNeeded(stubProvider(calls, { allowance: 0n }), usdc, trader, book, 50n);
+  const sent = calls.find((entry) => entry.method === "eth_sendTransaction");
+
+  // Every market on a chain is in this book. Approving exactly the stake would
+  // ask for two confirmations on every four-minute window.
+  assert.ok(sent.params[0].data.endsWith(approvalCovers.toString(16).padStart(64, "0")));
+  // Bounded all the same: not a standing claim on the whole balance.
   assert.ok(!sent.params[0].data.includes("f".repeat(64)));
+});
+
+test("a stake larger than the usual approval is approved for what it needs", async () => {
+  const calls = [];
+  const huge = approvalCovers * 2n;
+  await approveIfNeeded(stubProvider(calls, { allowance: 0n }), usdc, trader, book, huge);
+  const sent = calls.find((entry) => entry.method === "eth_sendTransaction");
+  assert.ok(sent.params[0].data.endsWith(huge.toString(16).padStart(64, "0")));
+});
+
+test("a position names its market, its outcome and its amount", async () => {
+  const calls = [];
+  await deposit(stubProvider(calls), book, trader, market, "yes", 5_000_000n);
+  const sent = calls.find((entry) => entry.method === "eth_sendTransaction");
+
+  assert.equal(sent.params[0].to, book);
+  assert.equal(sent.params[0].from, trader);
+  assert.ok(sent.params[0].data.startsWith(`0x9844b73f${"ab".repeat(32)}`));
+  assert.ok(sent.params[0].data.includes("796573"));
+});
+
+test("collecting names the market too", async () => {
+  const calls = [];
+  await claim(stubProvider(calls), book, trader, market);
+  const sent = calls.find((entry) => entry.method === "eth_sendTransaction");
+  assert.equal(sent.params[0].data, `0xbd66528a${"ab".repeat(32)}`);
 });
 
 test("a pending transaction is waited for until it is mined", async () => {
@@ -81,6 +102,7 @@ test("a contract's refusal is described in words", () => {
   const wallet = { code: -32603, message: "execution reverted", data: { code: 3, data: "0x1a64b33b" } };
   assert.match(describeRevert(wallet), /more than one wallet/);
   assert.match(describeRevert(new Error("reverted with custom error 0x560ff900")), /already been paid/);
+  assert.match(describeRevert(new Error("reverted with custom error 0xac8a2f48")), /not on this network yet/);
   assert.equal(describeRevert(new Error("user rejected")), null);
 });
 

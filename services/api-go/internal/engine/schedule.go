@@ -318,6 +318,19 @@ func (e *Engine) create(ctx context.Context, p streamPlan) error {
 		return fmt.Errorf("insert outcomes: %w", err)
 	}
 
+	// On chain before anyone wants it. Opening a market in the book costs a
+	// tenth of what a contract of its own did, and a trader who has to wait for
+	// one is a trader who misses a four minute window.
+	for _, chainID := range e.chains {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO market_deployments (market_id, chain_id, state)
+			VALUES ($1, $2, 'Requested')
+			ON CONFLICT (market_id, chain_id) DO NOTHING`, id, chainID)
+		if err != nil {
+			return fmt.Errorf("queue market for chain %d: %w", chainID, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}

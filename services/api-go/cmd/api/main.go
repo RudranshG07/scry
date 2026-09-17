@@ -36,7 +36,11 @@ func main() {
 
 		engineCtx, stopEngine := context.WithCancel(context.Background())
 		defer stopEngine()
-		go engine.New(postgres.Pool(), slog.Default(), settings.ObserverPairs).Run(engineCtx)
+		chains := make([]int64, 0, len(settings.Chains))
+		for _, deployment := range settings.Chains {
+			chains = append(chains, deployment.ID)
+		}
+		go engine.New(postgres.Pool(), slog.Default(), settings.ObserverPairs, chains).Run(engineCtx)
 
 		if len(settings.Chains) == 0 {
 			slog.Warn("SCRY_CHAINS is unset, so no market takes real positions.")

@@ -11,16 +11,17 @@ export const selectors = {
   approve: "0x095ea7b3",
   allowance: "0xdd62ed3e",
   balanceOf: "0x70a08231",
-  deposit: "0x1de26e16",
-  claim: "0x4e71d92d",
-  refund: "0x590e1ae3",
-  poolFor: "0xbde541a0",
-  positionOf: "0x8b86d878",
-  totalPool: "0xecfb49a3",
-  status: "0x200d2ed2",
+  deposit: "0x9844b73f",
+  claim: "0xbd66528a",
+  refund: "0x7249fbb6",
+  poolFor: "0xf47e9321",
+  positionOf: "0xeb7d65ff",
+  totalPool: "0x069bb172",
+  status: "0x52ad0d5e",
   collateral: "0xd8dfeb45",
-  stakedBy: "0x5f56a31a",
-  hasSettled: "0x1abc50ce",
+  maxStake: "0xea1b28e0",
+  stakedBy: "0x4ea050c4",
+  hasSettled: "0x3dd534b1",
 } as const;
 
 /** Custom errors the market reverts with, pinned and checked the same way. */
@@ -33,6 +34,8 @@ export const errorSelectors = {
   AlreadySettled: "0x560ff900",
   UnknownOutcome: "0x7c436a95",
   ZeroAmount: "0x1f2a2005",
+  NoSuchMarket: "0xac8a2f48",
+  MarketExists: "0x8fc6f59b",
 } as const;
 
 export function padWord(value: string): string {
@@ -49,6 +52,14 @@ export function encodeAddress(address: string): string {
 export function encodeUint(value: bigint): string {
   if (value < 0n) throw new Error("uint cannot be negative");
   return padWord(value.toString(16));
+}
+
+/** A market id is already a whole word: the hash the book knows it by, which
+ * the API sends because a browser cannot hash. */
+export function encodeMarketKey(key: string): string {
+  const bare = key.replace(/^0x/, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(bare)) throw new Error(`not a market id: ${key}`);
+  return bare;
 }
 
 /** Solidity holds bytes32 left-aligned, the opposite of every other type here. */
@@ -82,18 +93,22 @@ export const encode = {
   allowance: (owner: string, spender: string) =>
     call(selectors.allowance, encodeAddress(owner), encodeAddress(spender)),
   balanceOf: (owner: string) => call(selectors.balanceOf, encodeAddress(owner)),
-  deposit: (outcomeId: string, amount: bigint) =>
-    call(selectors.deposit, encodeBytes32(outcomeId), encodeUint(amount)),
-  claim: () => call(selectors.claim),
-  refund: () => call(selectors.refund),
-  poolFor: (outcomeId: string) => call(selectors.poolFor, encodeBytes32(outcomeId)),
-  positionOf: (account: string, outcomeId: string) =>
-    call(selectors.positionOf, encodeAddress(account), encodeBytes32(outcomeId)),
-  totalPool: () => call(selectors.totalPool),
-  status: () => call(selectors.status),
+  deposit: (marketKey: string, outcomeId: string, amount: bigint) =>
+    call(selectors.deposit, encodeMarketKey(marketKey), encodeBytes32(outcomeId), encodeUint(amount)),
+  claim: (marketKey: string) => call(selectors.claim, encodeMarketKey(marketKey)),
+  refund: (marketKey: string) => call(selectors.refund, encodeMarketKey(marketKey)),
+  poolFor: (marketKey: string, outcomeId: string) =>
+    call(selectors.poolFor, encodeMarketKey(marketKey), encodeBytes32(outcomeId)),
+  positionOf: (marketKey: string, account: string, outcomeId: string) =>
+    call(selectors.positionOf, encodeMarketKey(marketKey), encodeAddress(account), encodeBytes32(outcomeId)),
+  totalPool: (marketKey: string) => call(selectors.totalPool, encodeMarketKey(marketKey)),
+  status: (marketKey: string) => call(selectors.status, encodeMarketKey(marketKey)),
   collateral: () => call(selectors.collateral),
-  stakedBy: (account: string) => call(selectors.stakedBy, encodeAddress(account)),
-  hasSettled: (account: string) => call(selectors.hasSettled, encodeAddress(account)),
+  maxStake: () => call(selectors.maxStake),
+  stakedBy: (marketKey: string, account: string) =>
+    call(selectors.stakedBy, encodeMarketKey(marketKey), encodeAddress(account)),
+  hasSettled: (marketKey: string, account: string) =>
+    call(selectors.hasSettled, encodeMarketKey(marketKey), encodeAddress(account)),
 };
 
 /** Six decimals on both chains. A float would round "0.1" to something else. */

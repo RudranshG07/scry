@@ -9,18 +9,19 @@ import (
 )
 
 type Engine struct {
-	pool *pgxpool.Pool
-	tick time.Duration
-	log  *slog.Logger
+	pool   *pgxpool.Pool
+	tick   time.Duration
+	log    *slog.Logger
 	warned map[string]bool
 	pairs  int
+	chains []int64
 }
 
-func New(pool *pgxpool.Pool, log *slog.Logger, pairs int) *Engine {
+func New(pool *pgxpool.Pool, log *slog.Logger, pairs int, chains []int64) *Engine {
 	if pairs < 1 {
 		pairs = 1
 	}
-	return &Engine{pool: pool, tick: time.Second, log: log, warned: map[string]bool{}, pairs: pairs}
+	return &Engine{pool: pool, tick: time.Second, log: log, warned: map[string]bool{}, pairs: pairs, chains: chains}
 }
 
 func (e *Engine) Run(ctx context.Context) {
@@ -38,7 +39,6 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}
 }
-
 
 func (e *Engine) step(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

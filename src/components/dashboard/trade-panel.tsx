@@ -297,7 +297,7 @@ export function TradePanel({ market, now }: { market: Market; now: number }) {
           <p className="pt-4 text-[11px] leading-5 text-muted-foreground">
             {mode === "forecast"
               ? "Forecasts stay on this device."
-              : "Settles in USDC on the network you pick. If the observers cannot agree on a count, every stake is refunded."}
+              : "Settles in USDC on the network you pick. One approval covers every market there; each position after it is a single confirmation. If the observers cannot agree on a count, every stake is refunded."}
           </p>
         </div>
       </div>

@@ -92,24 +92,26 @@ export function usePosition(market: Market) {
         }
 
         setState({ ...idle, stage: "opening", chainId, message: `Opening this market on ${network}…` });
-        const contract = await contractOn(market, chainId);
+        const book = await contractOn(market, chainId);
 
-        const token = await collateralOf(provider, contract);
+        const token = await collateralOf(provider, book);
         const held = await balanceOf(provider, token, account);
         if (held < units) {
           setState({ ...idle, stage: "failed", chainId, message: `This wallet holds ${fromUsdc(held)} USDC on ${network}.` });
           return false;
         }
 
-        setState({ ...idle, stage: "approving", chainId, message: "Approve this amount of USDC in your wallet…" });
-        const approval = await approveIfNeeded(provider, token, account, contract, units);
+        // One approval covers every market in this network's book, so it is
+        // asked for once and each position after it is a single confirmation.
+        setState({ ...idle, stage: "approving", chainId, message: "Approve USDC for Scry in your wallet…" });
+        const approval = await approveIfNeeded(provider, token, account, book, units);
         if (approval) {
           setState({ stage: "approving", chainId, hash: approval, message: "Waiting for the approval to confirm…" });
           await waitForReceipt(provider, approval);
         }
 
         setState({ ...idle, stage: "depositing", chainId, message: "Confirm the position in your wallet…" });
-        const hash = await deposit(provider, contract, account, outcomeId, units);
+        const hash = await deposit(provider, book, account, market.key, outcomeId, units);
         setState({ stage: "confirming", chainId, hash, message: "Waiting for the position to confirm…" });
         await waitForReceipt(provider, hash);
 
@@ -148,7 +150,9 @@ export function useSettle() {
           await wallet.switchTo(chainId);
         }
         setState({ ...idle, positionId, stage: "depositing", chainId, message: "Confirm in your wallet…" });
-        const hash = kind === "claim" ? await claim(provider, contract, account) : await refund(provider, contract, account);
+        const hash = kind === "claim"
+          ? await claim(provider, contract, account, position.key)
+          : await refund(provider, contract, account, position.key);
         setState({ positionId, stage: "confirming", chainId, hash, message: "Waiting for it to confirm…" });
         await waitForReceipt(provider, hash);
         setState({

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 
-import { decodeAddress, decodeUint, encode, encodeBytes32, errorSelectors, fromUsdc, selectors, toUsdc } from "../src/lib/abi.ts";
+import { decodeAddress, decodeUint, encode, encodeBytes32, encodeMarketKey, errorSelectors, fromUsdc, selectors, toUsdc } from "../src/lib/abi.ts";
+
+// Every market lives in one book, so every call names the market it means.
+const market = `0x${"ab".repeat(32)}`;
 
 // Selectors are keccak hashes, which cannot be computed in the browser without a
 // hashing library. They are pinned as constants, so the only thing standing
@@ -11,16 +14,17 @@ const signatures = {
   approve: "approve(address,uint256)",
   allowance: "allowance(address,address)",
   balanceOf: "balanceOf(address)",
-  deposit: "deposit(bytes32,uint256)",
-  claim: "claim()",
-  refund: "refund()",
-  poolFor: "poolFor(bytes32)",
-  positionOf: "positionOf(address,bytes32)",
-  totalPool: "totalPool()",
-  status: "status()",
+  deposit: "deposit(bytes32,bytes32,uint256)",
+  claim: "claim(bytes32)",
+  refund: "refund(bytes32)",
+  poolFor: "poolFor(bytes32,bytes32)",
+  positionOf: "positionOf(bytes32,address,bytes32)",
+  totalPool: "totalPool(bytes32)",
+  status: "status(bytes32)",
   collateral: "collateral()",
-  stakedBy: "stakedBy(address)",
-  hasSettled: "hasSettled(address)",
+  maxStake: "maxStake()",
+  stakedBy: "stakedBy(bytes32,address)",
+  hasSettled: "hasSettled(bytes32,address)",
 };
 
 test("every pinned selector matches the compiled signature", (t) => {
@@ -67,7 +71,16 @@ test("outcome ids are right-padded, unlike every other type", () => {
   // Solidity holds bytes32 left-aligned. Padding these the same way as a number
   // would send a different outcome id than the one on screen.
   assert.equal(encodeBytes32("yes"), "796573".padEnd(64, "0"));
-  assert.ok(encode.deposit("yes", 1n).startsWith("0x1de26e16796573"));
+  assert.ok(encode.deposit(market, "yes", 1n).startsWith(`${selectors.deposit}${"ab".repeat(32)}796573`));
+});
+
+test("a market id is a whole word and is never guessed at", () => {
+  assert.equal(encodeMarketKey(market), "ab".repeat(32));
+  assert.equal(encodeMarketKey("ab".repeat(32)), "ab".repeat(32));
+  // The API sends this hash because a browser cannot compute it. Anything else
+  // would name a market the book has never heard of.
+  assert.throws(() => encodeMarketKey("0xabc"));
+  assert.throws(() => encodeMarketKey("market-1"));
 });
 
 test("an outcome id too long for a word is refused rather than truncated", () => {
@@ -79,9 +92,10 @@ test("a malformed address never reaches the wallet", () => {
   assert.throws(() => encode.approve("", 1n));
 });
 
-test("calls with no arguments are just the selector", () => {
-  assert.equal(encode.claim(), "0x4e71d92d");
-  assert.equal(encode.refund(), "0x590e1ae3");
+test("collecting names the market and nothing else", () => {
+  assert.equal(encode.claim(market), `${selectors.claim}${"ab".repeat(32)}`);
+  assert.equal(encode.refund(market), `${selectors.refund}${"ab".repeat(32)}`);
+  assert.equal(encode.collateral(), selectors.collateral);
 });
 
 test("USDC amounts survive the round trip without floating point", () => {

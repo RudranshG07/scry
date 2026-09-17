@@ -1,10 +1,19 @@
-/** Reads and writes the settlement contracts through the connected wallet. */
+/** Reads and writes the market book through the connected wallet. */
 
 import { decodeAddress, decodeUint, encode, errorSelectors, type HexString } from "./abi.ts";
 
 export type Eip1193 = {
   request<T = unknown>(request: { method: string; params?: unknown[] }): Promise<T>;
 };
+
+/**
+ * How much USDC one approval covers. Every market on a chain lives in one book,
+ * so approving per position would ask a trader for two confirmations on every
+ * four-minute window. Ten times what one wallet may stake on a market: enough
+ * that the question is asked once, bounded so it is not a standing claim on the
+ * whole balance.
+ */
+export const approvalCovers = 1_000_000_000n;
 
 async function call(provider: Eip1193, to: string, data: HexString) {
   return provider.request<string>({
@@ -17,11 +26,11 @@ async function read(provider: Eip1193, to: string, data: HexString): Promise<big
   return decodeUint(await call(provider, to, data));
 }
 
-/** Asked of the market itself. A token list kept here could name a different
- * USDC from the one the contract holds, and an approval against the wrong one
- * leaves the deposit to fail after the wallet has already asked for it. */
-export async function collateralOf(provider: Eip1193, market: string): Promise<HexString> {
-  return decodeAddress(await call(provider, market, encode.collateral()));
+/** Asked of the book itself. A token list kept here could name a different USDC
+ * from the one the contract holds, and an approval against the wrong one leaves
+ * the deposit to fail after the wallet has already asked for it. */
+export async function collateralOf(provider: Eip1193, book: string): Promise<HexString> {
+  return decodeAddress(await call(provider, book, encode.collateral()));
 }
 
 export async function allowance(provider: Eip1193, token: string, owner: string, spender: string) {
@@ -32,20 +41,26 @@ export async function balanceOf(provider: Eip1193, token: string, owner: string)
   return read(provider, token, encode.balanceOf(owner));
 }
 
-export async function poolFor(provider: Eip1193, market: string, outcomeId: string) {
-  return read(provider, market, encode.poolFor(outcomeId));
+export async function poolFor(provider: Eip1193, book: string, marketKey: string, outcomeId: string) {
+  return read(provider, book, encode.poolFor(marketKey, outcomeId));
 }
 
-export async function positionOf(provider: Eip1193, market: string, account: string, outcomeId: string) {
-  return read(provider, market, encode.positionOf(account, outcomeId));
+export async function positionOf(
+  provider: Eip1193,
+  book: string,
+  marketKey: string,
+  account: string,
+  outcomeId: string,
+) {
+  return read(provider, book, encode.positionOf(marketKey, account, outcomeId));
 }
 
-export async function totalPool(provider: Eip1193, market: string) {
-  return read(provider, market, encode.totalPool());
+export async function totalPool(provider: Eip1193, book: string, marketKey: string) {
+  return read(provider, book, encode.totalPool(marketKey));
 }
 
-export async function hasSettled(provider: Eip1193, market: string, account: string) {
-  return (await read(provider, market, encode.hasSettled(account))) !== 0n;
+export async function hasSettled(provider: Eip1193, book: string, marketKey: string, account: string) {
+  return (await read(provider, book, encode.hasSettled(marketKey, account))) !== 0n;
 }
 
 async function send(provider: Eip1193, from: string, to: string, data: HexString) {
@@ -55,35 +70,37 @@ async function send(provider: Eip1193, from: string, to: string, data: HexString
   });
 }
 
-/** Approves only this deposit. An unlimited allowance would outlive the market. */
+/** Approves a run of positions rather than this one alone, and only when the
+ * standing allowance no longer covers the trade. */
 export async function approveIfNeeded(
   provider: Eip1193,
   token: string,
   owner: string,
-  market: string,
+  book: string,
   amount: bigint,
 ): Promise<string | null> {
-  const current = await allowance(provider, token, owner, market);
+  const current = await allowance(provider, token, owner, book);
   if (current >= amount) return null;
-  return send(provider, owner, token, encode.approve(market, amount));
+  return send(provider, owner, token, encode.approve(book, amount > approvalCovers ? amount : approvalCovers));
 }
 
 export async function deposit(
   provider: Eip1193,
-  market: string,
+  book: string,
   from: string,
+  marketKey: string,
   outcomeId: string,
   amount: bigint,
 ) {
-  return send(provider, from, market, encode.deposit(outcomeId, amount));
+  return send(provider, from, book, encode.deposit(marketKey, outcomeId, amount));
 }
 
-export async function claim(provider: Eip1193, market: string, from: string) {
-  return send(provider, from, market, encode.claim());
+export async function claim(provider: Eip1193, book: string, from: string, marketKey: string) {
+  return send(provider, from, book, encode.claim(marketKey));
 }
 
-export async function refund(provider: Eip1193, market: string, from: string) {
-  return send(provider, from, market, encode.refund());
+export async function refund(provider: Eip1193, book: string, from: string, marketKey: string) {
+  return send(provider, from, book, encode.refund(marketKey));
 }
 
 type Receipt = { status: string; blockNumber: string | null };
@@ -123,6 +140,8 @@ const revertMessages: Record<keyof typeof errorSelectors, string> = {
   AlreadySettled: "This wallet has already been paid out on this market.",
   UnknownOutcome: "That outcome is not part of this market.",
   ZeroAmount: "Enter an amount above zero.",
+  NoSuchMarket: "This market is not on this network yet.",
+  MarketExists: "This market is already open.",
 };
 
 function textOf(error: unknown) {

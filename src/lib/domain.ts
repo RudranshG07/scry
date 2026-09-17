@@ -58,12 +58,13 @@ export type MarketDeployment = {
 
 export type SettlementChain = {
   chainId: number;
-  factory: `0x${string}`;
+  book: `0x${string}`;
   resolver: `0x${string}`;
 };
 
 export type Market = {
   id: string;
+  key: string;
   streamId: string;
   category: Category;
   unit?: string;
@@ -124,6 +125,7 @@ export type PositionState = "Open" | "Claimable" | "Claimed" | "Refundable" | "R
 export type Position = {
   id: string;
   marketId: string;
+  key: string;
   chainId: number;
   contractAddress?: `0x${string}`;
   question: string;
