@@ -81,7 +81,7 @@ func TestPositionState(t *testing.T) {
 		{"voided, already refunded", &voided, "yes", nil, 0, 25, "Refunded"},
 		{"won", &finalized, "yes", &yes, 0, 0, "Claimable"},
 		{"won and claimed", &finalized, "yes", &yes, 40, 0, "Claimed"},
-		{"lost", &finalized, "yes", &no, 0, 0, "Open"},
+		{"lost", &finalized, "yes", &no, 0, 0, "Lost"},
 	}
 
 	for _, c := range cases {

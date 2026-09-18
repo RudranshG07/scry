@@ -50,6 +50,46 @@ contract SilentUSDC {
     }
 }
 
+/// @dev Not every token reverts when it refuses. One that answers false must
+/// stop a deposit just as firmly, or the book credits a stake it never received.
+contract RefusingUSDC {
+    function transfer(address, uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function approve(address, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
+}
+
+contract RevertingUSDC {
+    error Refused();
+
+    function transfer(address, uint256) external pure returns (bool) {
+        revert Refused();
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        revert Refused();
+    }
+
+    function approve(address, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
+}
+
 library Fixtures {
     function rule(bytes32 marketId, uint64 locksAt) internal pure returns (ScryTypes.MarketRule memory r) {
         r.marketId = marketId;

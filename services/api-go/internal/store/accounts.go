@@ -67,6 +67,8 @@ func readPosition(row pgx.CollectableRow) (domain.Position, error) {
 	switch {
 	case p.State == "Refundable" || p.State == "Refunded":
 		p.EstimatedReturn = p.Amount
+	case p.State == "Lost":
+		p.EstimatedReturn = 0
 	case side > 0:
 		p.EstimatedReturn = round(p.Amount*(pool/side), 2)
 	}
@@ -92,6 +94,10 @@ func positionState(deployment *string, outcome string, won *string, claimed, ref
 		return "Claimed"
 	case state == "Finalized" && winner:
 		return "Claimable"
+	// A settled market that paid somebody else. Left to the default this read
+	// as Open for ever, next to a return the wallet was never going to get.
+	case state == "Finalized":
+		return "Lost"
 	default:
 		return "Open"
 	}

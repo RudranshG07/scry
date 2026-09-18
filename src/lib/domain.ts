@@ -120,7 +120,7 @@ export type ProofOfObservation = {
   observers: Observer[];
 };
 
-export type PositionState = "Open" | "Claimable" | "Claimed" | "Refundable" | "Refunded";
+export type PositionState = "Open" | "Claimable" | "Claimed" | "Lost" | "Refundable" | "Refunded";
 
 export type Position = {
   id: string;

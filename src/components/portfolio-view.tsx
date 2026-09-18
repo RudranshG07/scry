@@ -16,8 +16,21 @@ const positionTone: Record<string, string> = {
   Refundable: "bg-warning/12 text-warning",
   Claimed: "bg-muted text-muted-foreground",
   Refunded: "bg-muted text-muted-foreground",
+  Lost: "bg-danger/12 text-danger",
   Open: "bg-primary/12 text-ring",
 };
+
+/** Only an open market has a return still to play for. Saying "estimated"
+ * against a settled one promises money that is already somewhere else. */
+function returnLabel(state: string, estimated: number) {
+  if (state === "Lost") return "nothing returned";
+  const amount = formatUsdc(estimated);
+  if (state === "Refundable") return `${amount} refundable`;
+  if (state === "Refunded") return `${amount} refunded`;
+  if (state === "Claimable") return `${amount} to claim`;
+  if (state === "Claimed") return `${amount} claimed`;
+  return `${amount} estimated`;
+}
 
 export function PortfolioView() {
   const wallet = useWallet();
@@ -123,7 +136,7 @@ export function PortfolioView() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${positionTone[position.state] ?? positionTone.Open}`}>{position.state}</span><span className="text-xs text-muted-foreground">{position.outcomeLabel} · {network}</span></div>
                           <h3 className="mt-3 text-sm font-semibold">{position.question}</h3>
-                          <p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">{formatUsdc(position.amount)} positioned · {formatUsdc(position.estimatedReturn)} {position.state === "Refundable" ? "refundable" : position.state === "Claimable" ? "to claim" : "estimated"}</p>
+                          <p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">{formatUsdc(position.amount)} positioned · {returnLabel(position.state, position.estimatedReturn)}</p>
                           {active && settlement.state.message && (
                             <p className={`mt-2 text-xs ${settlement.state.stage === "failed" ? "text-danger" : "text-accent"}`} role={settlement.state.stage === "failed" ? "alert" : "status"}>{settlement.state.message}</p>
                           )}

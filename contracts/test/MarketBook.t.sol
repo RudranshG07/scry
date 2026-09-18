@@ -4,7 +4,8 @@ import {MarketBook} from "../src/MarketBook.sol";
 import {ObserverRegistry} from "../src/ObserverRegistry.sol";
 import {ScryTypes} from "../src/ScryTypes.sol";
 import {Deploy} from "../script/Deploy.s.sol";
-import {Fixtures, SilentUSDC, vm} from "./Harness.sol";
+import {SafeTransfer} from "../src/IERC20.sol";
+import {Fixtures, RefusingUSDC, RevertingUSDC, SilentUSDC, vm} from "./Harness.sol";
 
 contract MarketBookTest {
     SilentUSDC usdc;
@@ -412,6 +413,252 @@ contract MarketBookTest {
         vm.expectRevert(MarketBook.WrongStatus.selector);
         book.abandon(MARKET);
     }
+
+    function testABookWithoutAResolverHoldsMoneyNobodyCanRelease() public {
+        usdc = new SilentUSDC();
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        new MarketBook(address(this), OPERATOR, address(usdc), address(0), 10_000e6, 1_000e6);
+    }
+
+    function testABookWithoutACollateralTokenIsRefused() public {
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        new MarketBook(address(this), OPERATOR, address(0), RESOLVER, 10_000e6, 1_000e6);
+    }
+
+    function testTheOperatorOpensMarketsAsWellAsTheAdmin() public {
+        _build();
+        vm.prank(OPERATOR);
+        book.createMarket(Fixtures.rule(OTHER, LOCKS_AT), Fixtures.bands(180), 0);
+        require(book.marketCount() == 2, "the operator's market is on the book");
+    }
+
+    function testAMarketWithoutARuleIsRefused() public {
+        _build();
+        ScryTypes.MarketRule memory r = Fixtures.rule(OTHER, LOCKS_AT);
+        r.ruleHash = bytes32(0);
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        book.createMarket(r, Fixtures.bands(180), 0);
+    }
+
+    function testAMarketWithoutAnIdIsRefused() public {
+        _build();
+        ScryTypes.MarketRule memory r = Fixtures.rule(bytes32(0), LOCKS_AT);
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        book.createMarket(r, Fixtures.bands(180), 0);
+    }
+
+    /// Two outcomes sharing an id would let a claim be paid from the wrong pool.
+    function testTwoOutcomesCannotShareAnId() public {
+        _build();
+        ScryTypes.Outcome[] memory same = Fixtures.bands(180);
+        same[1].id = same[0].id;
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        book.createMarket(Fixtures.rule(OTHER, LOCKS_AT), same, 0);
+    }
+
+    function testADepositOfNothingIsRefused() public {
+        _build();
+        vm.prank(ALICE);
+        vm.expectRevert(MarketBook.ZeroAmount.selector);
+        book.deposit(MARKET, "yes", 0);
+    }
+
+    function testASettledMarketTakesNoFurtherPositions() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        book.resolve(MARKET, "yes", 200, keccak256("e"));
+
+        _expectStakeRefused(BOB, "no", 10e6, MarketBook.WrongStatus.selector);
+    }
+
+    function testAMarketThatWasNeverOpenedCannotBeSettled() public {
+        _build();
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        vm.expectRevert(MarketBook.NoSuchMarket.selector);
+        book.resolve(OTHER, "yes", 200, keccak256("e"));
+    }
+
+    /// A result cannot arrive while the book is still taking money against it.
+    function testAMarketCannotBeSettledBeforeItLocks() public {
+        _build();
+        vm.prank(RESOLVER);
+        vm.expectRevert(MarketBook.WrongStatus.selector);
+        book.resolve(MARKET, "yes", 200, keccak256("e"));
+    }
+
+    function testAWinningOutcomeTheMarketNeverOfferedIsRefused() public {
+        _build();
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        vm.expectRevert(MarketBook.UnknownOutcome.selector);
+        book.resolve(MARKET, "maybe", 200, keccak256("e"));
+    }
+
+    function testOnlyTheResolverCanVoidAMarket() public {
+        _build();
+        vm.prank(ALICE);
+        vm.expectRevert(MarketBook.NotResolver.selector);
+        book.invalidate(MARKET, "nice try");
+    }
+
+    function testAMarketThatWasNeverOpenedCannotBeVoided() public {
+        _build();
+        vm.prank(RESOLVER);
+        vm.expectRevert(MarketBook.NoSuchMarket.selector);
+        book.invalidate(OTHER, "no such thing");
+    }
+
+    function testASettledMarketCannotThenBeVoided() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.warp(LOCKS_AT);
+        vm.startPrank(RESOLVER);
+        book.resolve(MARKET, "yes", 200, keccak256("e"));
+        vm.expectRevert(MarketBook.WrongStatus.selector);
+        book.invalidate(MARKET, "too late");
+        vm.stopPrank();
+    }
+
+    function testAMarketThatWasNeverOpenedCannotBeAbandoned() public {
+        _build();
+        vm.warp(ENDS_AT + 2 days);
+        vm.expectRevert(MarketBook.NoSuchMarket.selector);
+        book.abandon(OTHER);
+    }
+
+    function testNothingIsPaidOutWhileTheMarketIsStillOpen() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.prank(ALICE);
+        vm.expectRevert(MarketBook.WrongStatus.selector);
+        book.claim(MARKET);
+    }
+
+    function testARefundCannotBeTakenTwice() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.prank(RESOLVER);
+        book.invalidate(MARKET, "camera died");
+
+        vm.startPrank(ALICE);
+        require(book.refund(MARKET) == 10e6, "stake back once");
+        vm.expectRevert(MarketBook.AlreadySettled.selector);
+        book.refund(MARKET);
+        vm.stopPrank();
+    }
+
+    function testSomeoneWhoNeverStakedGetsNoRefund() public {
+        _build();
+        _stake(ALICE, "yes", 10e6);
+        vm.prank(RESOLVER);
+        book.invalidate(MARKET, "camera died");
+
+        vm.prank(CARL);
+        vm.expectRevert(MarketBook.NothingToClaim.selector);
+        book.refund(MARKET);
+    }
+
+    function testTheSeedStaysPutWhileTheMarketIsLive() public {
+        _build();
+        vm.expectRevert(MarketBook.WrongStatus.selector);
+        book.reclaimSeed(MARKET);
+    }
+
+    function testOnlyTheSponsorTakesTheSeedBack() public {
+        _build();
+        vm.prank(RESOLVER);
+        book.invalidate(MARKET, "camera died");
+
+        vm.prank(ALICE);
+        vm.expectRevert(MarketBook.NotSponsor.selector);
+        book.reclaimSeed(MARKET);
+    }
+
+    function testTheSeedCannotBeReclaimedTwice() public {
+        _build();
+        usdc.mint(address(this), 50e6);
+        usdc.approve(address(book), 50e6);
+        book.createMarket(Fixtures.rule(OTHER, LOCKS_AT), Fixtures.bands(180), 50e6);
+
+        vm.prank(RESOLVER);
+        book.invalidate(OTHER, "camera died");
+
+        require(book.reclaimSeed(OTHER) == 50e6, "seed back to the sponsor");
+        vm.expectRevert(MarketBook.NothingToClaim.selector);
+        book.reclaimSeed(OTHER);
+    }
+
+    /// An operator of nobody would leave the book unable to open a market again.
+    function testTheOperatorCannotBeSetToNobody() public {
+        _build();
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        book.setOperator(address(0));
+    }
+
+    /// The admin shares the operator's emergency stop. Only the admin lifts it.
+    function testTheAdminCanStopTheBookToo() public {
+        _build();
+        book.pauseDeposits();
+        _expectStakeRefused(ALICE, "yes", 10e6, MarketBook.Paused.selector);
+    }
+
+    function testAStrangerCannotStopTheBook() public {
+        _build();
+        vm.prank(ALICE);
+        vm.expectRevert(MarketBook.NotOperator.selector);
+        book.pauseDeposits();
+    }
+
+    /// The API and the site read these by hand-encoded selector rather than
+    /// through an ABI, so what they answer across a market is pinned here.
+    function testTheViewsTheApiReadsFollowTheMarket() public {
+        _build();
+        require(book.isOutcome(MARKET, "yes"), "yes is an outcome of this market");
+        require(!book.isOutcome(MARKET, "maybe"), "maybe is not");
+
+        _stake(ALICE, "yes", 10e6);
+        _stake(BOB, "no", 30e6);
+        require(book.positionOf(MARKET, ALICE, "yes") == 10e6, "her position on the side she took");
+        require(book.positionOf(MARKET, ALICE, "no") == 0, "nothing on the side she did not");
+        require(book.stakedBy(MARKET, ALICE) == 10e6, "her stake across the whole market");
+        require(!book.hasSettled(MARKET, ALICE), "nobody has settled while it is open");
+
+        vm.warp(LOCKS_AT);
+        vm.prank(RESOLVER);
+        book.resolve(MARKET, "yes", 214, keccak256("e"));
+        require(book.winningOutcomeId(MARKET) == "yes", "the winner is readable once settled");
+
+        vm.prank(ALICE);
+        book.claim(MARKET);
+        require(book.hasSettled(MARKET, ALICE), "settled once she has been paid");
+    }
+
+    /// USDC deployments differ: some return nothing, some false, some revert.
+    /// Only an empty return or an explicit true may count as money received.
+    function testATokenThatAnswersFalseTakesNoDeposit() public {
+        RefusingUSDC refusing = new RefusingUSDC();
+        MarketBook liar = new MarketBook(address(this), OPERATOR, address(refusing), RESOLVER, 10_000e6, 1_000e6);
+        vm.warp(LOCKS_AT - 1000);
+        liar.createMarket(Fixtures.rule(MARKET, LOCKS_AT), Fixtures.bands(180), 0);
+
+        vm.prank(ALICE);
+        vm.expectRevert(SafeTransfer.TransferFailed.selector);
+        liar.deposit(MARKET, "yes", 10e6);
+    }
+
+    function testATokenThatRevertsTakesNoDeposit() public {
+        RevertingUSDC hostile = new RevertingUSDC();
+        MarketBook refusing = new MarketBook(address(this), OPERATOR, address(hostile), RESOLVER, 10_000e6, 1_000e6);
+        vm.warp(LOCKS_AT - 1000);
+        refusing.createMarket(Fixtures.rule(MARKET, LOCKS_AT), Fixtures.bands(180), 0);
+
+        vm.prank(ALICE);
+        vm.expectRevert(SafeTransfer.TransferFailed.selector);
+        refusing.deposit(MARKET, "yes", 10e6);
+    }
 }
 
 contract ObserverRegistryTest {
@@ -453,6 +700,34 @@ contract ObserverRegistryTest {
         r.setObserver(address(0xA1), true);
         r.setObserver(address(0xA1), true);
         require(r.activeCount() == 1, "counted once");
+    }
+
+    function testARegistryWithoutAnAdminIsRefused() public {
+        vm.expectRevert(ObserverRegistry.InvalidConfiguration.selector);
+        new ObserverRegistry(address(0), 1);
+    }
+
+    /// Whoever registers observers can settle every market, so a registry that
+    /// asked for no signatures at all would hand that to anyone.
+    function testARegistryThatAsksForNoSignaturesIsRefused() public {
+        vm.expectRevert(ObserverRegistry.ThresholdTooLow.selector);
+        new ObserverRegistry(address(this), 0);
+    }
+
+    function testNobodyCannotBeRegisteredAsAnObserver() public {
+        ObserverRegistry r = new ObserverRegistry(address(this), 1);
+        vm.expectRevert(ObserverRegistry.InvalidConfiguration.selector);
+        r.setObserver(address(0), true);
+    }
+
+    function testOnlyTheAdminSetsTheThreshold() public {
+        ObserverRegistry r = new ObserverRegistry(address(this), 1);
+        r.setObserver(address(0xA1), true);
+        r.setObserver(address(0xA2), true);
+
+        vm.prank(address(0xDEAD));
+        vm.expectRevert(ObserverRegistry.NotAdmin.selector);
+        r.setSignatureThreshold(2);
     }
 }
 

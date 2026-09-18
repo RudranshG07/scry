@@ -227,4 +227,184 @@ contract ObservationResolverTest {
         vm.expectRevert(ObservationResolver.AlreadyProposed.selector);
         resolver.propose(MARKET, again, sigs);
     }
+
+    /// A resolver that can never finalise would strand every market it settles.
+    function testAResolverWithoutAChallengeWindowIsRefused() public {
+        _build();
+        vm.expectRevert(ObservationResolver.InvalidConfiguration.selector);
+        new ObservationResolver(address(this), OPERATOR, address(registry), 0);
+    }
+
+    function testAResolverWithoutARegistryIsRefused() public {
+        vm.expectRevert(ObservationResolver.InvalidConfiguration.selector);
+        new ObservationResolver(address(this), OPERATOR, address(0), CHALLENGE);
+    }
+
+    function testTheAdminCanVoidAResultAsWellAsTheOperator() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        resolver.propose(MARKET, r, _quorum(r));
+
+        resolver.challenge(MARKET, "admin pulled it");
+        require(book.status(MARKET) == ScryTypes.MarketStatus.Invalid, "voided by the admin");
+    }
+
+    function testAStrangerCannotWireTheBook() public {
+        _build();
+        ObservationResolver fresh = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        vm.prank(BOB);
+        vm.expectRevert(ObservationResolver.NotAdmin.selector);
+        fresh.setBook(address(book));
+    }
+
+    function testTheBookCannotBeWiredToNobody() public {
+        _build();
+        ObservationResolver fresh = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        vm.expectRevert(ObservationResolver.InvalidConfiguration.selector);
+        fresh.setBook(address(0));
+    }
+
+    function testTheOperatorCannotBeSetToNobody() public {
+        _build();
+        vm.expectRevert(ObservationResolver.InvalidConfiguration.selector);
+        resolver.setOperator(address(0));
+    }
+
+    function testNothingCanBeProposedBeforeTheBookIsWired() public {
+        _build();
+        ObservationResolver fresh = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        bytes[] memory sigs = _quorum(r);
+        vm.expectRevert(ObservationResolver.NoBook.selector);
+        fresh.propose(MARKET, r, sigs);
+    }
+
+    function testNothingCanBeVoidedBeforeTheBookIsWired() public {
+        _build();
+        ObservationResolver fresh = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        vm.prank(OPERATOR);
+        vm.expectRevert(ObservationResolver.NoBook.selector);
+        fresh.invalidate(MARKET, "no book");
+    }
+
+    /// An observer saying "this reading is no good" must void the market rather
+    /// than settle it, so the resolver refuses to carry it as a result.
+    function testAResultFlaggedInvalidIsNotAResult() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        r.invalid = true;
+        bytes[] memory sigs = _quorum(r);
+        vm.expectRevert(ObservationResolver.ResultMarkedInvalid.selector);
+        resolver.propose(MARKET, r, sigs);
+    }
+
+    function testAVoidedResultCannotBeVoidedAgain() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        resolver.propose(MARKET, r, _quorum(r));
+
+        vm.startPrank(OPERATOR);
+        resolver.challenge(MARKET, "camera was frozen");
+        vm.expectRevert(ObservationResolver.WrongStatus.selector);
+        resolver.challenge(MARKET, "frozen again");
+        vm.stopPrank();
+    }
+
+    function testAFinalisedResultCannotBeFinalisedAgain() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        resolver.propose(MARKET, r, _quorum(r));
+        vm.warp(block.timestamp + CHALLENGE);
+        resolver.finalize(MARKET);
+
+        vm.expectRevert(ObservationResolver.WrongStatus.selector);
+        resolver.finalize(MARKET);
+    }
+
+    function testAFinalisedResultCannotThenBeVoided() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        resolver.propose(MARKET, r, _quorum(r));
+        vm.warp(block.timestamp + CHALLENGE);
+        resolver.finalize(MARKET);
+
+        vm.prank(OPERATOR);
+        vm.expectRevert(ObservationResolver.WrongStatus.selector);
+        resolver.invalidate(MARKET, "after the fact");
+    }
+
+    function testASignatureOfTheWrongLengthIsRefused() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = hex"00";
+        sigs[1] = _sign(PRIMARY_KEY, r);
+
+        vm.expectRevert(ObservationResolver.NotAnObserver.selector);
+        resolver.propose(MARKET, r, sigs);
+    }
+
+    /// Every signature has a mirror image with the same signer. Accepting the
+    /// high half would let one observer's reading count twice toward quorum.
+    function testTheMirrorImageOfASignatureIsRefused() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        (uint8 v, bytes32 rr, bytes32 s) = vm.sign(PRIMARY_KEY, resolver.digest(r));
+        uint256 order = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
+
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = abi.encodePacked(rr, bytes32(order - uint256(s)), uint8(v == 27 ? 28 : 27));
+        sigs[1] = _sign(VERIFY_KEY, r);
+
+        vm.expectRevert(ObservationResolver.NotAnObserver.selector);
+        resolver.propose(MARKET, r, sigs);
+    }
+
+    function testASignatureThatRecoversToNobodyIsRefused() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        (, bytes32 rr, bytes32 s) = vm.sign(PRIMARY_KEY, resolver.digest(r));
+
+        bytes[] memory sigs = new bytes[](2);
+        // v is carried as signed, not normalised, so an impossible one recovers
+        // to nobody rather than to whoever the caller hoped.
+        sigs[0] = abi.encodePacked(rr, s, uint8(29));
+        sigs[1] = _sign(VERIFY_KEY, r);
+
+        vm.expectRevert(ObservationResolver.NotAnObserver.selector);
+        resolver.propose(MARKET, r, sigs);
+    }
+
+    function testAStrangerCannotVoidAMarket() public {
+        _build();
+        vm.prank(ALICE);
+        vm.expectRevert(ObservationResolver.NotOperator.selector);
+        resolver.invalidate(MARKET, "not yours to void");
+    }
+
+    /// The API reads these two to decide whether a result is ready to finalize,
+    /// and it encodes the calls by hand, so what they answer is pinned here.
+    function testAProposalReportsItsStatusAndDeadline() public {
+        _build();
+        ScryTypes.ObservationResult memory r = Fixtures.result(MARKET, _ruleHash(), 214, "yes");
+        resolver.propose(MARKET, r, _quorum(r));
+
+        require(
+            resolver.observationStatus(MARKET) == ScryTypes.ObservationStatus.Proposed,
+            "proposed while the challenge window runs"
+        );
+        require(resolver.challengeEndsAt(MARKET) == LOCKS_AT + CHALLENGE, "deadline is the window from the proposal");
+
+        vm.warp(LOCKS_AT + CHALLENGE);
+        resolver.finalize(MARKET);
+        require(resolver.observationStatus(MARKET) == ScryTypes.ObservationStatus.Final, "final once settled");
+    }
+
+    /// Two deployments must not share a domain, or a signature gathered on a
+    /// testnet would settle the same market on mainnet.
+    function testEachResolverSignsUnderItsOwnDomain() public {
+        _build();
+        ObservationResolver elsewhere = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
+        require(resolver.domainSeparator() != elsewhere.domainSeparator(), "domains differ by address");
+    }
 }
