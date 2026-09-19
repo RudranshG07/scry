@@ -132,6 +132,9 @@ contract ObservationResolver is IObservationResolver {
 
     function challenge(bytes32 marketId, bytes32 reason) external override onlyOperator {
         Proposal storage p = _proposals[marketId];
+        // Proposed is the zero value of the enum, so an empty slot reads as one.
+        // Only `exists` separates a real proposal from a market nobody has read.
+        if (!p.exists) revert WrongStatus();
         if (p.status != ScryTypes.ObservationStatus.Proposed) revert WrongStatus();
         if (block.timestamp >= p.challengeEndsAt) revert ChallengeClosed();
 
@@ -144,6 +147,9 @@ contract ObservationResolver is IObservationResolver {
 
     function finalize(bytes32 marketId) external override {
         Proposal storage p = _proposals[marketId];
+        // Without this, finalizing a market nobody proposed reached the book
+        // with an empty result and settled it to outcome zero.
+        if (!p.exists) revert WrongStatus();
         if (p.status != ScryTypes.ObservationStatus.Proposed) revert WrongStatus();
         if (block.timestamp < p.challengeEndsAt) revert ChallengeOpen();
 

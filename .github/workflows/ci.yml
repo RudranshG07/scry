@@ -16,6 +16,23 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The worker's queries are the part worth testing most and they exist only
+    # against a real database. Timescale rather than postgres because migration
+    # 002 creates the extension and three hypertables.
+    services:
+      timescale:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: scry
+          POSTGRES_USER: scry
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scry -d scry"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,7 +61,15 @@ jobs:
       - run: npm run test:vision
       - run: npm run test:curation
       - run: npm run test:reputation
+      - run: |
+          for file in database/migrations/*.sql; do
+            psql "$SCRY_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+        env:
+          SCRY_TEST_DATABASE_URL: postgres://scry:ci-only@127.0.0.1:5432/scry?sslmode=disable
       - run: go test ./services/api-go/...
+        env:
+          SCRY_TEST_DATABASE_URL: postgres://scry:ci-only@127.0.0.1:5432/scry?sslmode=disable
       - run: forge test --root contracts
       - run: docker compose config --quiet
         env:

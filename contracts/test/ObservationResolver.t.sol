@@ -407,4 +407,20 @@ contract ObservationResolverTest {
         ObservationResolver elsewhere = new ObservationResolver(address(this), OPERATOR, address(registry), CHALLENGE);
         require(resolver.domainSeparator() != elsewhere.domainSeparator(), "domains differ by address");
     }
+
+    /// Proposed is the zero value of the status enum, so an untouched slot used
+    /// to read as a live proposal. Finalizing one carried an empty result to the
+    /// book, which settled to outcome zero if the market held such an outcome.
+    function testNothingCanBeFinalisedUntilSomethingIsProposed() public {
+        _build();
+        vm.expectRevert(ObservationResolver.WrongStatus.selector);
+        resolver.finalize(MARKET);
+    }
+
+    function testNothingCanBeVoidedUntilSomethingIsProposed() public {
+        _build();
+        vm.prank(OPERATOR);
+        vm.expectRevert(ObservationResolver.WrongStatus.selector);
+        resolver.challenge(MARKET, "nothing has been read yet");
+    }
 }

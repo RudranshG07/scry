@@ -372,6 +372,9 @@ contract MarketBook is IMarketBook {
     /// ever invalidate.
     function _requireCovering(ScryTypes.Outcome[] calldata outcomes) private pure {
         for (uint256 i = 0; i < outcomes.length; i++) {
+            // Zero is what an empty result names. A market holding an outcome
+            // of zero could be settled by a call that carried no reading at all.
+            if (outcomes[i].id == bytes32(0)) revert InvalidConfiguration();
             for (uint256 j = i + 1; j < outcomes.length; j++) {
                 if (outcomes[i].id == outcomes[j].id) revert InvalidConfiguration();
                 if (_overlaps(outcomes[i], outcomes[j])) revert OutcomeBandsOverlap();

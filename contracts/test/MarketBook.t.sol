@@ -659,6 +659,16 @@ contract MarketBookTest {
         vm.expectRevert(SafeTransfer.TransferFailed.selector);
         refusing.deposit(MARKET, "yes", 10e6);
     }
+
+    /// Zero is the outcome an empty result names, so a market carrying one could
+    /// be settled by a call that read nothing at all.
+    function testAnOutcomeOfNothingIsRefused() public {
+        _build();
+        ScryTypes.Outcome[] memory zeroed = Fixtures.bands(180);
+        zeroed[1].id = bytes32(0);
+        vm.expectRevert(MarketBook.InvalidConfiguration.selector);
+        book.createMarket(Fixtures.rule(OTHER, LOCKS_AT), zeroed, 0);
+    }
 }
 
 contract ObserverRegistryTest {

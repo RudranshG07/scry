@@ -40,6 +40,13 @@ type node struct {
 	ruleHash      int64
 	receiptStatus int64
 	receiptBlock  int64
+
+	// What the book and the resolver say about a market the worker is carrying.
+	observation   int64
+	marketStatus  int64
+	totalPool     int64
+	poolFor       int64
+	challengeEnds int64
 }
 
 func addressWord(address string) string {
@@ -63,6 +70,11 @@ func (n node) serve(t *testing.T) *httptest.Server {
 	registry := prefixOf(chain.ObserverRegistryCall())
 	threshold := prefixOf(chain.SignatureThresholdCall())
 	rule := prefixOf(chain.RuleHashCall([32]byte{}))
+	observation := prefixOf(chain.ObservationStatusCall([32]byte{}))
+	marketStatus := prefixOf(chain.StatusCall([32]byte{}))
+	totalPool := prefixOf(chain.TotalPoolCall([32]byte{}))
+	poolFor := prefixOf(chain.PoolForCall([32]byte{}, [32]byte{}))
+	challengeEnds := prefixOf(chain.ChallengeEndsAtCall([32]byte{}))
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var envelope struct {
@@ -113,6 +125,16 @@ func (n node) serve(t *testing.T) *httptest.Server {
 				answer("0x" + uintWord(n.threshold))
 			case rule:
 				answer("0x" + uintWord(n.ruleHash))
+			case observation:
+				answer("0x" + uintWord(n.observation))
+			case marketStatus:
+				answer("0x" + uintWord(n.marketStatus))
+			case totalPool:
+				answer("0x" + uintWord(n.totalPool))
+			case poolFor:
+				answer("0x" + uintWord(n.poolFor))
+			case challengeEnds:
+				answer("0x" + uintWord(n.challengeEnds))
 			default:
 				t.Errorf("unexpected call %s to %s", call.Data, call.To)
 			}
